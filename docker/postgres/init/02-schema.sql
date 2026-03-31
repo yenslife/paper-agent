@@ -17,6 +17,7 @@ BEGIN
         CREATE TYPE import_job_status AS ENUM (
             'pending',
             'running',
+            'cancelled',
             'completed',
             'failed'
         );
@@ -64,6 +65,7 @@ CREATE TABLE IF NOT EXISTS import_jobs (
     id VARCHAR(36) PRIMARY KEY,
     source_name VARCHAR(255),
     status import_job_status NOT NULL DEFAULT 'pending',
+    cancel_requested BOOLEAN NOT NULL DEFAULT FALSE,
     stage VARCHAR(64),
     stage_message TEXT,
     parsed_count INTEGER NOT NULL DEFAULT 0,

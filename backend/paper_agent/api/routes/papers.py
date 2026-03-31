@@ -86,6 +86,17 @@ async def get_import_job(
     return ImportJobRead.model_validate(job, from_attributes=True)
 
 
+@router.post("/papers/import-jobs/{job_id}/cancel", response_model=ImportJobRead)
+async def cancel_import_job(
+    job_id: str,
+    session: AsyncSession = Depends(get_db_session),
+) -> ImportJobRead:
+    job = await ingestion_service.request_import_job_cancel(session, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Import job not found.")
+    return ImportJobRead.model_validate(job, from_attributes=True)
+
+
 @router.get("/papers", response_model=PaperListResponse)
 async def list_papers(
     q: str | None = None,

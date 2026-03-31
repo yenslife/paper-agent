@@ -1,4 +1,4 @@
-import { DownloadCloud, Loader2, UploadCloud } from "lucide-react";
+import { DownloadCloud, Loader2, Square, UploadCloud } from "lucide-react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -11,10 +11,12 @@ type Props = {
   importSummary: ImportSummary | null;
   isFetchingMarkdown: boolean;
   isImportLoading: boolean;
+  isCancellingImport: boolean;
   onSourceUrlChange: (value: string) => void;
   onMarkdownChange: (value: string) => void;
   onFetchMarkdown: () => void;
   onImportSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+  onCancelImport: () => void;
 };
 
 export function IngestionPanel({
@@ -23,11 +25,16 @@ export function IngestionPanel({
   importSummary,
   isFetchingMarkdown,
   isImportLoading,
+  isCancellingImport,
   onSourceUrlChange,
   onMarkdownChange,
   onFetchMarkdown,
   onImportSubmit,
+  onCancelImport,
 }: Props) {
+  const canCancelImport =
+    !!importSummary && ["pending", "running"].includes(importSummary.status) && !importSummary.cancel_requested;
+
   return (
     <Card className="flex min-h-[720px] flex-col overflow-hidden lg:h-[720px] lg:min-h-0">
       <CardHeader>
@@ -68,10 +75,22 @@ export function IngestionPanel({
           <div className="rounded-2xl border border-[var(--border)] bg-white/70 px-4 py-3 text-sm text-[var(--muted-foreground)]">
             建議仍盡量保留清楚的 paper title、連結，以及 venue/year heading，這樣解析會更穩。
           </div>
-          <Button className="w-full" type="submit" disabled={isImportLoading}>
-            {isImportLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
-            {isImportLoading ? "匯入工作進行中" : "建立匯入工作"}
-          </Button>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Button className="flex-1" type="submit" disabled={isImportLoading}>
+              {isImportLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
+              {isImportLoading ? "匯入工作進行中" : "建立匯入工作"}
+            </Button>
+            <Button
+              className="border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800 sm:w-44"
+              type="button"
+              variant="outline"
+              disabled={!canCancelImport || isCancellingImport}
+              onClick={onCancelImport}
+            >
+              {isCancellingImport ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Square className="mr-2 h-4 w-4" />}
+              {isCancellingImport ? "中斷中" : "中斷 job"}
+            </Button>
+          </div>
         </form>
 
         {importSummary ? (
@@ -106,6 +125,7 @@ export function IngestionPanel({
 function formatImportStatus(status: ImportSummary["status"]) {
   if (status === "pending") return "等待執行";
   if (status === "running") return "匯入中";
+  if (status === "cancelled") return "已取消";
   if (status === "completed") return "已完成";
   return "失敗";
 }
@@ -113,12 +133,14 @@ function formatImportStatus(status: ImportSummary["status"]) {
 function formatImportStage(stage: string | null | undefined) {
   if (stage === "queued") return "排隊中";
   if (stage === "preparing") return "準備中";
+  if (stage === "cancelling") return "取消中";
   if (stage === "parsing_markdown") return "解析 Markdown";
   if (stage === "merging_results") return "統整結果";
   if (stage === "saving_papers") return "寫入 papers";
   if (stage === "fetching_abstracts") return "抓取摘要";
   if (stage === "generating_embeddings") return "建立 embedding";
   if (stage === "completed") return "已完成";
+  if (stage === "cancelled") return "已取消";
   if (stage === "failed") return "失敗";
   return "進行中";
 }

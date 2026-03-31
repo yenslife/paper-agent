@@ -28,6 +28,7 @@ class ImportJobRead(BaseModel):
     id: str
     source_name: str | None = None
     status: str
+    cancel_requested: bool = False
     stage: str | None = None
     stage_message: str | None = None
     parsed_count: int

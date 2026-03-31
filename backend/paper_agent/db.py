@@ -42,6 +42,7 @@ async def initialize_database() -> None:
             await connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             await _rename_enum_value_if_present(connection, "import_job_status", "PENDING", "pending")
             await _rename_enum_value_if_present(connection, "import_job_status", "RUNNING", "running")
+            await connection.execute(text("ALTER TYPE import_job_status ADD VALUE IF NOT EXISTS 'cancelled'"))
             await _rename_enum_value_if_present(connection, "import_job_status", "COMPLETED", "completed")
             await _rename_enum_value_if_present(connection, "import_job_status", "FAILED", "failed")
             await _rename_enum_value_if_present(connection, "ingest_status", "READY", "ready")
@@ -79,6 +80,9 @@ async def initialize_database() -> None:
             await connection.execute(text("ALTER TABLE papers ALTER COLUMN url DROP NOT NULL"))
             await connection.execute(text("ALTER TABLE papers ALTER COLUMN title TYPE TEXT"))
             await connection.execute(text("CREATE INDEX IF NOT EXISTS ix_papers_conference_id ON papers (conference_id)"))
+            await connection.execute(
+                text("ALTER TABLE import_jobs ADD COLUMN IF NOT EXISTS cancel_requested BOOLEAN NOT NULL DEFAULT FALSE")
+            )
             await connection.execute(text("ALTER TABLE import_jobs ADD COLUMN IF NOT EXISTS stage VARCHAR(64)"))
             await connection.execute(text("ALTER TABLE import_jobs ADD COLUMN IF NOT EXISTS stage_message TEXT"))
 

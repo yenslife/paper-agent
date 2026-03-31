@@ -29,7 +29,8 @@ export type ChatResponse = {
 export type ImportSummary = {
   id: string;
   source_name?: string | null;
-  status: "pending" | "running" | "completed" | "failed";
+  status: "pending" | "running" | "cancelled" | "completed" | "failed";
+  cancel_requested: boolean;
   stage?: string | null;
   stage_message?: string | null;
   parsed_count: number;

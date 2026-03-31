@@ -1,6 +1,7 @@
 import pytest
 
 from paper_agent.services.markdown_parser import (
+    ImportJobCancelledError,
     KnownConferenceLabel,
     MarkdownParser,
     ParsedPaper,
@@ -229,3 +230,39 @@ async def test_markdown_parser_reuses_existing_conference_labels_in_prompt() -> 
     system_message = fake_client.chat.completions.calls[0]["messages"][0]["content"]  # type: ignore[index]
     assert "Existing conference labels:" in system_message
     assert "USENIX Security | source=https://example.com/list | year=2024" in system_message
+
+
+@pytest.mark.asyncio
+async def test_markdown_parser_propagates_cancellation() -> None:
+    fake_client = _FakeClient([
+        '{"papers":[{"title":"Paper A","url":null,"source_page_url":"https://example.com/list","venue":"USENIX Security","year":2025}]}',
+        '{"papers":[{"title":"Paper B","url":null,"source_page_url":"https://example.com/list","venue":"USENIX Security","year":2025}]}',
+    ])
+    parser = MarkdownParser(client=fake_client)
+    parser.settings.parser_chunk_size_chars = 50
+    parser.settings.parser_chunk_overlap_chars = 12
+    parser.settings.parser_max_concurrency = 1
+
+    content = "\n".join(
+        [
+            "Title: Demo",
+            "URL Source: https://example.com/list",
+            "",
+            "Markdown Content:",
+            "Paper A",
+            "Author line A",
+            "Paper B",
+            "Author line B",
+            "Paper C",
+            "Author line C",
+        ]
+    )
+
+    checks = {"count": 0}
+
+    async def cancel_check() -> bool:
+        checks["count"] += 1
+        return checks["count"] >= 2
+
+    with pytest.raises(ImportJobCancelledError):
+        await parser.parse_markdown_papers(content, cancel_check=cancel_check)

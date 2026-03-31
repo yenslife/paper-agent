@@ -23,6 +23,10 @@ SOURCE_URL_PATTERN = re.compile(r"^\s*URL Source:\s*(https?://\S+)\s*$", re.IGNO
 MAX_REASONABLE_TITLE_CHARS = 500
 
 
+class ImportJobCancelledError(Exception):
+    pass
+
+
 @dataclass(slots=True)
 class ParsedPaper:
     title: str
@@ -279,6 +283,7 @@ class MarkdownParser:
         content: str,
         existing_conferences: list[KnownConferenceLabel] | None = None,
         progress_callback: Callable[[int, int], Awaitable[None]] | None = None,
+        cancel_check: Callable[[], Awaitable[bool]] | None = None,
     ) -> list[ParsedPaper]:
         fallback = parse_markdown_papers_rule_based(content)
         try:
@@ -294,7 +299,11 @@ class MarkdownParser:
             async def parse_one(index: int, chunk: str) -> list[ParsedPaper]:
                 nonlocal completed_chunks
                 async with semaphore:
+                    if cancel_check and await cancel_check():
+                        raise ImportJobCancelledError()
                     chunk_result = await self._parse_chunk_with_llm(chunk, existing_conferences=existing_conferences)
+                    if cancel_check and await cancel_check():
+                        raise ImportJobCancelledError()
                     completed_chunks += 1
                     if progress_callback:
                         await progress_callback(completed_chunks, total_chunks)
@@ -306,6 +315,8 @@ class MarkdownParser:
             parsed = [paper for chunk_result in chunk_results for paper in chunk_result]
             normalized = normalize_parsed_papers(parsed)
             return normalized or fallback
+        except ImportJobCancelledError:
+            raise
         except Exception:
             return fallback
 

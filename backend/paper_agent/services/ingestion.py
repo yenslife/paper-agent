@@ -10,6 +10,7 @@ from paper_agent.schemas import ImportJobRead, ImportSummary
 from paper_agent.services.abstract_fetcher import AbstractFetcher
 from paper_agent.services.embeddings import EmbeddingService
 from paper_agent.services.markdown_parser import (
+    ImportJobCancelledError,
     KnownConferenceLabel,
     MarkdownParser,
     ParsedPaper,
@@ -145,10 +146,37 @@ class IngestionService:
     async def get_import_job(self, session: AsyncSession, job_id: str) -> ImportJob | None:
         return await session.get(ImportJob, job_id)
 
+    async def request_import_job_cancel(self, session: AsyncSession, job_id: str) -> ImportJob | None:
+        job = await session.get(ImportJob, job_id)
+        if not job:
+            return None
+
+        if job.status in {ImportJobStatus.COMPLETED, ImportJobStatus.FAILED, ImportJobStatus.CANCELLED}:
+            return job
+
+        job.cancel_requested = True
+        if job.status == ImportJobStatus.PENDING:
+            job.status = ImportJobStatus.CANCELLED
+            job.stage = "cancelled"
+            job.stage_message = "匯入工作已在開始前取消。"
+        else:
+            job.stage = "cancelling"
+            job.stage_message = "已收到取消請求，正在停止匯入工作。"
+        await session.commit()
+        await session.refresh(job)
+        return job
+
     async def run_import_job(self, job_id: str, content: str, source_name: str | None = None) -> None:
         async with SessionLocal() as session:
             job = await session.get(ImportJob, job_id)
             if not job:
+                return
+
+            if job.status == ImportJobStatus.CANCELLED or job.cancel_requested:
+                job.status = ImportJobStatus.CANCELLED
+                job.stage = "cancelled"
+                job.stage_message = "匯入工作已取消。"
+                await session.commit()
                 return
 
             job.status = ImportJobStatus.RUNNING
@@ -171,6 +199,17 @@ class IngestionService:
                 job.status = ImportJobStatus.COMPLETED
                 job.stage = "completed"
                 job.stage_message = "匯入工作已完成。"
+                await session.commit()
+            except ImportJobCancelledError:
+                await session.rollback()
+                job = await session.get(ImportJob, job_id)
+                if not job:
+                    return
+                job.status = ImportJobStatus.CANCELLED
+                job.cancel_requested = True
+                job.stage = "cancelled"
+                job.stage_message = "匯入工作已取消。"
+                job.error_message = None
                 await session.commit()
             except Exception as exc:
                 await session.rollback()
@@ -198,11 +237,28 @@ class IngestionService:
                 progress_job = await progress_session.get(ImportJob, job.id)
                 if not progress_job:
                     return
+                if progress_job.cancel_requested:
+                    raise ImportJobCancelledError()
                 progress_job.stage = "parsing_markdown"
                 progress_job.stage_message = f"正在解析 Markdown chunk {current_chunk}/{total_chunks}。"
                 await progress_session.commit()
 
+        async def cancel_check() -> bool:
+            if not job:
+                return False
+            async with SessionLocal() as cancel_session:
+                cancel_job = await cancel_session.get(ImportJob, job.id)
+                return bool(cancel_job and cancel_job.cancel_requested)
+
+        async def ensure_not_cancelled() -> None:
+            if not job:
+                return
+            await session.refresh(job)
+            if job.cancel_requested:
+                raise ImportJobCancelledError()
+
         if job:
+            await ensure_not_cancelled()
             job.stage = "parsing_markdown"
             job.stage_message = "正在切塊並解析 Markdown。"
             if persist_progress:
@@ -213,6 +269,7 @@ class IngestionService:
             content,
             existing_conferences=existing_conferences,
             progress_callback=handle_parse_progress if job else None,
+            cancel_check=cancel_check if job else None,
         )
         imported: list[Paper] = []
         skipped_count = 0
@@ -221,6 +278,7 @@ class IngestionService:
         conference_cache: dict[str, Conference] = {}
 
         if job:
+            await ensure_not_cancelled()
             job.stage = "merging_results"
             job.stage_message = "正在統整與去除重複的解析結果。"
             job.parsed_count = len(parsed_papers)
@@ -228,6 +286,8 @@ class IngestionService:
                 await persist_progress()
 
         for parsed in parsed_papers:
+            if job:
+                await ensure_not_cancelled()
             if job:
                 job.stage = "saving_papers"
                 job.stage_message = f"正在處理 paper {job.processed_count + 1}/{max(len(parsed_papers), 1)}。"
@@ -266,6 +326,8 @@ class IngestionService:
                     abstract = None
                     if parsed.url:
                         if job:
+                            await ensure_not_cancelled()
+                        if job:
                             job.stage = "fetching_abstracts"
                             job.stage_message = f"正在抓取摘要：{parsed.title}"
                             if persist_progress:
@@ -279,6 +341,8 @@ class IngestionService:
                     paper.ingest_status = IngestStatus.METADATA_ONLY if not parsed.url else IngestStatus.ABSTRACT_MISSING
                     if parsed.url:
                         abstract_missing_count += 1
+                    if job:
+                        await ensure_not_cancelled()
                     if job:
                         job.stage = "generating_embeddings"
                         job.stage_message = f"正在建立 metadata embedding：{parsed.title}"
@@ -302,6 +366,8 @@ class IngestionService:
                     paper.abstract = abstract
                     paper.ingest_status = IngestStatus.READY
                     if job:
+                        await ensure_not_cancelled()
+                    if job:
                         job.stage = "generating_embeddings"
                         job.stage_message = f"正在建立 abstract embedding：{parsed.title}"
                         if persist_progress:
@@ -320,7 +386,9 @@ class IngestionService:
                     )
                     session.add(PaperEmbedding(paper_id=paper.id, embedding=embedding_vector))
                     imported.append(paper)
-            except Exception as exc:
+            except ImportJobCancelledError:
+                raise
+            except Exception:
                 await session.rollback()
                 if job:
                     refreshed_job = await session.get(ImportJob, job.id)

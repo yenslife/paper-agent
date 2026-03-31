@@ -42,6 +42,7 @@ export default function App() {
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [isImportSubmitting, setIsImportSubmitting] = useState(false);
   const [isFetchingMarkdown, setIsFetchingMarkdown] = useState(false);
+  const [isCancellingImport, setIsCancellingImport] = useState(false);
   const [isPaperSaving, setIsPaperSaving] = useState(false);
   const [deletingPaperId, setDeletingPaperId] = useState<string | null>(null);
   const [resolvingConferencePaperId, setResolvingConferencePaperId] = useState<string | null>(null);
@@ -99,7 +100,7 @@ export default function App() {
         if (payload.status === "failed" && payload.error_message) {
           setError(payload.error_message);
         }
-        if (payload.status === "completed") {
+        if (payload.status === "completed" || payload.status === "cancelled") {
           setPaperPage(1);
           void loadPapers(1);
         }
@@ -253,6 +254,31 @@ export default function App() {
     }
   }
 
+  async function handleCancelImport() {
+    if (!importSummary) return;
+
+    setError(null);
+    setIsCancellingImport(true);
+    try {
+      const response = await fetch(buildApiUrl(`/papers/import-jobs/${importSummary.id}/cancel`), {
+        method: "POST",
+      });
+      if (!response.ok) {
+        throw new Error("無法中斷這個匯入工作。");
+      }
+      const payload: ImportSummary = await response.json();
+      setImportSummary(payload);
+      if (payload.status === "cancelled") {
+        await loadPapers(1);
+        setPaperPage(1);
+      }
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "發生未知錯誤。");
+    } finally {
+      setIsCancellingImport(false);
+    }
+  }
+
   async function handlePaperSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!editingPaper) return;
@@ -357,10 +383,12 @@ export default function App() {
           importSummary={importSummary}
           isFetchingMarkdown={isFetchingMarkdown}
           isImportLoading={isImportLoading}
+          isCancellingImport={isCancellingImport}
           onSourceUrlChange={setSourceUrlInput}
           onMarkdownChange={setMarkdown}
           onFetchMarkdown={() => void handleFetchMarkdownFromUrl()}
           onImportSubmit={handleImportSubmit}
+          onCancelImport={() => void handleCancelImport()}
         />
         <ChatPanel
           messages={messages}

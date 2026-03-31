@@ -23,6 +23,7 @@ class IngestStatus(str, enum.Enum):
 class ImportJobStatus(str, enum.Enum):
     PENDING = "pending"
     RUNNING = "running"
+    CANCELLED = "cancelled"
     COMPLETED = "completed"
     FAILED = "failed"
 
@@ -83,6 +84,7 @@ class ImportJob(Base):
         nullable=False,
         default=ImportJobStatus.PENDING,
     )
+    cancel_requested: Mapped[bool] = mapped_column(nullable=False, default=False)
     stage: Mapped[str | None] = mapped_column(String(64), nullable=True)
     stage_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     parsed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
