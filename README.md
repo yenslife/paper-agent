@@ -50,40 +50,31 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5433/paper_agent
 OPENAI_MODEL=gpt-4.1-mini
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 FRONTEND_ORIGIN=http://localhost:5173
+VITE_API_BASE_URL=/api
 ```
-
-## 啟動 backend
-
-```bash
-docker compose up -d
-cd backend
-uv run uvicorn paper_agent.main:app --reload
-```
-
-API 預設會在 `http://localhost:8000`。
-
-## 啟動 frontend
-
-```bash
-cd frontend
-pnpm dev
-```
-
-前端預設會在 `http://localhost:5173`，並透過 `VITE_API_BASE_URL` 連線到 backend。若未設定，預設連 `http://localhost:8000`。
 
 ## Docker Compose
 
-專案提供兩個容器：
+專案提供四個容器：
 
 - `postgres`: 使用 `pgvector/pgvector:pg16`，提供 paper agent 的向量資料庫
 - `adminer`: 提供資料庫瀏覽介面
+- `backend`: FastAPI API server
+- `frontend`: 以 `nginx` 提供建置後的 React 前端
 - PostgreSQL 會在第一次建立 volume 時，自動套用 `docker/postgres/init/*.sql`，建立 extension、enum、tables 與 indexes
+- compose 模式下前端會透過 `nginx` 將 `/api/*` 代理到 backend，不需要瀏覽器直接跨來源打 `localhost:8000`
 
-啟動：
+完整啟動前後端與資料庫：
 
 ```bash
 docker compose up -d
 ```
+
+服務位置：
+
+- Frontend: `http://localhost:5173`
+- Backend API: `http://localhost:8000`
+- Adminer: `http://localhost:8080`
 
 停止：
 
@@ -97,10 +88,6 @@ docker compose down
 docker compose down -v
 ```
 
-資料庫介面：
-
-- Adminer: `http://localhost:8080`
-
 Adminer 連線資訊：
 
 - System: `PostgreSQL`
@@ -109,13 +96,25 @@ Adminer 連線資訊：
 - Password: `postgres`
 - Database: `paper_agent`
 
-本機 backend 連 compose 裡的資料庫時，`.env` 中的 `DATABASE_URL` 應維持：
+若你改成在本機直接跑 backend，`.env` 中的 `DATABASE_URL` 應維持：
 
 ```bash
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5433/paper_agent
 ```
 
-因為 backend 是在你主機上跑，不是在 compose network 裡跑，所以 host 要用 `localhost`，不是 `postgres`。
+因為這種模式下 backend 是在你主機上跑，不是在 compose network 裡跑，所以 host 要用 `localhost`，不是 `postgres`。
+
+## 本機開發模式
+
+若你想保留 hot reload，可以只用 compose 跑資料庫，再本機分別跑 backend/frontend：
+
+```bash
+docker compose up -d postgres adminer
+cd backend && uv run uvicorn paper_agent.main:app --reload
+cd frontend && pnpm dev
+```
+
+本機前端預設會在 `http://localhost:5173`，並透過 `VITE_API_BASE_URL` 連線到 backend。若未設定，預設連 `http://localhost:8000`。
 
 ## Markdown 匯入格式
 
