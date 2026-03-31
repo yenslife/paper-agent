@@ -81,7 +81,7 @@ class ChatService:
             group_id=resolved_session_id,
             metadata={
                 "session_id": resolved_session_id,
-                "history_count": len(history),
+                "history_count": str(len(history)),
             },
         ):
             result = await Runner.run(
