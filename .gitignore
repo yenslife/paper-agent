@@ -25,6 +25,8 @@ venv/
 
 # Node / frontend
 node_modules/
+.node_modules.incomplete/
+node_modules.incomplete/
 .pnpm-store/
 dist/
 .vite/

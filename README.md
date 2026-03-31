@@ -12,9 +12,8 @@
 
 ## 專案結構
 
-- `paper_agent/`: FastAPI backend 與 Agent / retrieval / ingestion 邏輯
-- `src/`: React frontend
-- `tests/`: 單元測試
+- `backend/`: FastAPI backend、測試與 Python 專案設定
+- `frontend/`: React frontend 與 Vite/Tailwind 設定
 - `docs/`: 系統設計與功能整理
 
 ## 文件
@@ -57,6 +56,7 @@ FRONTEND_ORIGIN=http://localhost:5173
 
 ```bash
 docker compose up -d
+cd backend
 uv run uvicorn paper_agent.main:app --reload
 ```
 
@@ -65,6 +65,7 @@ API 預設會在 `http://localhost:8000`。
 ## 啟動 frontend
 
 ```bash
+cd frontend
 pnpm dev
 ```
 
@@ -149,8 +150,9 @@ heading 中若包含 venue 與年份，系統會自動保留。
 ## 測試
 
 ```bash
-uv run pytest請不吝點讚、訂閱、轉發及打賞支持明鏡與點點欄目。
-pnpm build
+cd backend && uv run pytest
+cd backend && uv run python -m py_compile $(find paper_agent -name '*.py' -print)
+cd frontend && pnpm build
 ```
 
 ## TODO
@@ -166,6 +168,7 @@ pnpm build
 若你不是用 compose 第一次初始化資料庫，或想手動補建既有資料庫結構，可執行：
 
 ```bash
+cd backend
 uv run python -m paper_agent.scripts.init_db
 ```
 
