@@ -1,0 +1,398 @@
+import json
+import uuid
+from dataclasses import dataclass, field
+
+from agents import Agent, ModelSettings, RunContextWrapper, Runner, function_tool, trace
+from agents.extensions.memory import SQLAlchemySession
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from paper_agent.config import get_settings
+from paper_agent.db import engine
+from paper_agent.models import IngestStatus, Paper, PaperEmbedding
+from paper_agent.schemas import ChatMessage, ChatResponse, Citation, SourceSummary
+from paper_agent.services.ingestion import IngestionService
+from paper_agent.services.retrieval import RetrievalService
+
+
+class AgentCitation(BaseModel):
+    title: str
+    url: str | None = None
+    source_page_url: str | None = None
+    venue: str | None = None
+    year: int | None = None
+    source_type: str = Field(description="Either local_paper_db or web_search.")
+
+
+class AgentOutput(BaseModel):
+    answer: str
+    citations: list[AgentCitation] = Field(default_factory=list)
+
+
+@dataclass(slots=True)
+class AgentContext:
+    session: AsyncSession
+    retrieval_service: RetrievalService
+    ingestion_service: IngestionService
+    local_citations: dict[str, Citation] = field(default_factory=dict)
+
+
+def _paper_to_citation(paper: Paper) -> Citation:
+    return Citation(
+        title=paper.title,
+        url=paper.url or paper.source_page_url,
+        source_page_url=paper.source_page_url,
+        venue=paper.venue,
+        year=paper.year,
+        source_type="local_paper_db",
+    )
+
+
+class ChatService:
+    def __init__(self, retrieval_service: RetrievalService, ingestion_service: IngestionService) -> None:
+        self.retrieval_service = retrieval_service
+        self.ingestion_service = ingestion_service
+        self.settings = get_settings()
+
+    async def run_chat(
+        self,
+        session: AsyncSession,
+        message: str,
+        history: list[ChatMessage],
+        session_id: str | None = None,
+    ) -> ChatResponse:
+        resolved_session_id = session_id or str(uuid.uuid4())
+        context = AgentContext(
+            session=session,
+            retrieval_service=self.retrieval_service,
+            ingestion_service=self.ingestion_service,
+        )
+        agent = self._build_agent()
+        input_text = self._format_conversation_input(message, history, has_persistent_session=session_id is not None)
+        agent_session = SQLAlchemySession(
+            resolved_session_id,
+            engine=engine,
+            create_tables=True,
+        )
+
+        with trace(
+            "paper-agent-chat",
+            group_id=resolved_session_id,
+            metadata={
+                "session_id": resolved_session_id,
+                "history_count": len(history),
+            },
+        ):
+            result = await Runner.run(
+                agent,
+                input_text,
+                context=context,
+                session=agent_session,
+            )
+        final_output = self._coerce_output(result.final_output)
+        citations = self._merge_citations(final_output.citations, context.local_citations)
+        sources = self._build_sources(citations)
+
+        return ChatResponse(
+            session_id=resolved_session_id,
+            answer=final_output.answer,
+            citations=citations,
+            sources=sources,
+        )
+
+    def _build_agent(self) -> Agent[AgentContext]:
+        @function_tool
+        async def search_papers(
+            ctx: RunContextWrapper[AgentContext],
+            query: str,
+            venue: str | None = None,
+            year: int | None = None,
+            top_k: int | None = None,
+        ) -> str:
+            """Search the local paper database by semantic similarity. Use this first for paper-related questions."""
+
+            papers = await ctx.context.retrieval_service.search_papers(
+                ctx.context.session,
+                query=query,
+                venue=venue,
+                year=year,
+                top_k=top_k,
+            )
+            for paper in papers:
+                ctx.context.local_citations[paper.id] = Citation(
+                    title=paper.title,
+                    url=paper.url or paper.source_page_url,
+                    source_page_url=paper.source_page_url,
+                    venue=paper.venue,
+                    year=paper.year,
+                    source_type="local_paper_db",
+                )
+            return json.dumps([paper.model_dump() for paper in papers], ensure_ascii=False)
+
+        @function_tool
+        async def get_paper_details(
+            ctx: RunContextWrapper[AgentContext],
+            paper_ids: list[str],
+        ) -> str:
+            """Fetch detailed records for papers that were previously retrieved."""
+
+            papers = await ctx.context.retrieval_service.get_papers_by_ids(ctx.context.session, paper_ids)
+            for paper in papers:
+                ctx.context.local_citations[paper.id] = _paper_to_citation(paper)
+            payload = [
+                {
+                    "id": paper.id,
+                    "title": paper.title,
+                    "url": paper.url,
+                    "source_page_url": paper.source_page_url,
+                    "venue": paper.venue,
+                    "year": paper.year,
+                    "abstract": paper.abstract,
+                    "source_type": "local_paper_db",
+                }
+                for paper in papers
+            ]
+            return json.dumps(payload, ensure_ascii=False)
+
+        @function_tool
+        async def find_paper_abstract(
+            ctx: RunContextWrapper[AgentContext],
+            title: str,
+            venue: str | None = None,
+            year: int | None = None,
+        ) -> str:
+            """Find the abstract for a specific paper title. Check the local database first, then do an external metadata lookup if needed."""
+
+            local_matches = await ctx.context.retrieval_service.find_papers_by_title(
+                ctx.context.session,
+                title=title,
+                limit=5,
+            )
+            if local_matches:
+                best_local = local_matches[0]
+                ctx.context.local_citations[best_local.id] = _paper_to_citation(best_local)
+                if best_local.abstract:
+                    return json.dumps(
+                        {
+                            "status": "found_local",
+                            "paper": {
+                                "id": best_local.id,
+                                "title": best_local.title,
+                                "abstract": best_local.abstract,
+                                "url": best_local.url,
+                                "source_page_url": best_local.source_page_url,
+                                "venue": best_local.venue,
+                                "year": best_local.year,
+                                "source_type": "local_paper_db",
+                            },
+                        },
+                        ensure_ascii=False,
+                    )
+
+                lookup = await ctx.context.ingestion_service.abstract_fetcher.lookup_abstract_by_title(
+                    title=best_local.title,
+                    venue=best_local.venue or venue,
+                    year=best_local.year or year,
+                )
+                if lookup:
+                    best_local.abstract = lookup.abstract
+                    if not best_local.url and lookup.url:
+                        best_local.url = lookup.url
+                    if not best_local.venue and lookup.venue:
+                        best_local.venue = lookup.venue
+                    if not best_local.year and lookup.year:
+                        best_local.year = lookup.year
+                    best_local.ingest_status = IngestStatus.READY
+
+                    parts = [best_local.title, lookup.abstract]
+                    if best_local.venue:
+                        parts.append(best_local.venue)
+                    if best_local.year:
+                        parts.append(str(best_local.year))
+                    if best_local.source_page_url:
+                        parts.append(best_local.source_page_url)
+                    embedding_input = "\n\n".join(parts)
+                    embedding_vector = await ctx.context.retrieval_service.embedding_service.embed_text(embedding_input)
+                    existing_embedding = await ctx.context.session.scalar(
+                        select(PaperEmbedding).where(PaperEmbedding.paper_id == best_local.id)
+                    )
+                    if existing_embedding:
+                        existing_embedding.embedding = embedding_vector
+                    else:
+                        ctx.context.session.add(PaperEmbedding(paper_id=best_local.id, embedding=embedding_vector))
+                    await ctx.context.session.commit()
+                    await ctx.context.session.refresh(best_local)
+                    ctx.context.local_citations[best_local.id] = _paper_to_citation(best_local)
+                    return json.dumps(
+                        {
+                            "status": "enriched_local",
+                            "paper": {
+                                "id": best_local.id,
+                                "title": best_local.title,
+                                "abstract": best_local.abstract,
+                                "url": best_local.url,
+                                "source_page_url": best_local.source_page_url,
+                                "venue": best_local.venue,
+                                "year": best_local.year,
+                                "source_type": "local_paper_db",
+                            },
+                        },
+                        ensure_ascii=False,
+                    )
+
+            lookup = await ctx.context.ingestion_service.abstract_fetcher.lookup_abstract_by_title(
+                title=title,
+                venue=venue,
+                year=year,
+            )
+            if lookup:
+                return json.dumps(
+                    {
+                        "status": "found_external",
+                        "paper": {
+                            "title": lookup.title,
+                            "abstract": lookup.abstract,
+                            "url": lookup.url,
+                            "venue": lookup.venue,
+                            "year": lookup.year,
+                            "source_type": "web_search",
+                        },
+                    },
+                    ensure_ascii=False,
+                )
+
+            return json.dumps(
+                {
+                    "status": "not_found",
+                    "message": "Abstract not found in the local database or via external metadata lookup.",
+                },
+                ensure_ascii=False,
+            )
+
+        @function_tool
+        async def import_markdown_papers(
+            ctx: RunContextWrapper[AgentContext],
+            markdown_content: str,
+            source_name: str | None = None,
+        ) -> str:
+            """Import a markdown list of papers into the local paper database."""
+
+            result = await ctx.context.ingestion_service.import_markdown(
+                ctx.context.session,
+                content=markdown_content,
+                source_name=source_name,
+            )
+            return result.summary.model_dump_json()
+
+        @function_tool
+        async def web_search(query: str) -> str:
+            """Placeholder web search tool. It is currently unavailable and should not be treated as a real web result."""
+
+            return json.dumps(
+                {
+                    "status": "unavailable",
+                    "query": query,
+                    "message": (
+                        "Web search is not configured yet. "
+                        "Use the local paper database only and clearly tell the user that external web search is unavailable."
+                    ),
+                },
+                ensure_ascii=False,
+            )
+
+        instructions = """
+You are a research paper assistant.
+
+Rules:
+1. For any request that depends on papers, first use `search_papers`.
+1a. If the user asks for the abstract of a specific paper, use `find_paper_abstract`.
+2. The `web_search` tool is currently a dummy placeholder. If you call it, explain that external web search is not configured yet.
+3. Never claim you read a paper unless it came from `get_paper_details`.
+4. Citations must only include URLs that came from trusted tools.
+5. Distinguish local paper citations from web search citations with the `source_type` field.
+6. If the database is missing enough evidence, say so directly.
+"""
+
+        return Agent(
+            name="Paper Agent",
+            instructions=instructions,
+            model=self.settings.openai_model,
+            model_settings=ModelSettings(temperature=0.2),
+            tools=[
+                search_papers,
+                get_paper_details,
+                find_paper_abstract,
+                import_markdown_papers,
+                web_search,
+            ],
+            output_type=AgentOutput,
+        )
+
+    def _format_conversation_input(
+        self,
+        message: str,
+        history: list[ChatMessage],
+        has_persistent_session: bool,
+    ) -> str:
+        if has_persistent_session:
+            return message
+
+        relevant_history = history[-self.settings.max_history_messages :]
+        lines = ["You are helping with academic paper discovery and analysis."]
+        if relevant_history:
+            lines.append("Conversation history:")
+            for item in relevant_history:
+                role = "User" if item.role == "user" else "Assistant"
+                lines.append(f"{role}: {item.content}")
+        lines.append(f"Current user message: {message}")
+        return "\n".join(lines)
+
+    def _coerce_output(self, final_output: object) -> AgentOutput:
+        if isinstance(final_output, AgentOutput):
+            return final_output
+        if isinstance(final_output, str):
+            return AgentOutput.model_validate_json(final_output)
+        return AgentOutput.model_validate(final_output)
+
+    def _merge_citations(
+        self,
+        citations: list[AgentCitation],
+        local_citations: dict[str, Citation],
+    ) -> list[Citation]:
+        merged: dict[tuple[str, str], Citation] = {}
+
+        for citation in local_citations.values():
+            merged[(citation.source_type, citation.url or citation.source_page_url or citation.title)] = citation
+
+        for citation in citations:
+            normalized = Citation(
+                title=citation.title,
+                url=citation.url,
+                source_page_url=citation.source_page_url,
+                venue=citation.venue,
+                year=citation.year,
+                source_type="web_search" if citation.source_type == "web_search" else "local_paper_db",
+            )
+            merged[(normalized.source_type, normalized.url or normalized.source_page_url or normalized.title)] = normalized
+
+        return list(merged.values())
+
+    def _build_sources(self, citations: list[Citation]) -> list[SourceSummary]:
+        source_types = {citation.source_type for citation in citations}
+        descriptions: list[SourceSummary] = []
+        if "local_paper_db" in source_types:
+            descriptions.append(
+                SourceSummary(
+                    source_type="local_paper_db",
+                    description="Results retrieved from the curated local paper database.",
+                )
+            )
+        if "web_search" in source_types:
+            descriptions.append(
+                SourceSummary(
+                    source_type="web_search",
+                    description="External web sources used as supplemental context.",
+                )
+            )
+        return descriptions
