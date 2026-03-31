@@ -55,12 +55,18 @@ export function IngestionPanel({
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
               <input
-                className="flex-1 rounded-2xl border border-[var(--border)] bg-white/90 px-4 py-3 text-sm outline-none transition focus:border-[var(--primary)]"
+                className="min-w-0 flex-1 rounded-2xl border border-[var(--border)] bg-white/90 px-4 py-3 text-sm outline-none transition focus:border-[var(--primary)]"
                 value={sourceUrlInput}
                 onChange={(event) => onSourceUrlChange(event.target.value)}
                 placeholder="https://www.usenix.org/conference/usenixsecurity24/fall-accepted-papers"
               />
-              <Button type="button" variant="outline" disabled={isFetchingMarkdown} onClick={onFetchMarkdown}>
+              <Button
+                className="w-full sm:w-auto sm:shrink-0"
+                type="button"
+                variant="outline"
+                disabled={isFetchingMarkdown}
+                onClick={onFetchMarkdown}
+              >
                 {isFetchingMarkdown ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <DownloadCloud className="mr-2 h-4 w-4" />}
                 抓取 Markdown
               </Button>
