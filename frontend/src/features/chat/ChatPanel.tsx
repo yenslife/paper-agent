@@ -106,7 +106,7 @@ export function ChatPanel({ messages, prompt, isChatLoading, error, onPromptChan
           </div>
         </form>
 
-        {error ? <p className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p> : null}
+        {error ? <p className="rounded-2xl border border-[var(--border)] bg-[var(--muted)] px-4 py-3 text-sm text-[var(--foreground)]">{error}</p> : null}
       </CardContent>
     </Card>
   );

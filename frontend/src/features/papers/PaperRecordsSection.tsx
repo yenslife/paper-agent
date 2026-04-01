@@ -43,7 +43,7 @@ export function PaperRecordsSection(props: Props) {
 
   return (
     <section>
-      <Card>
+      <Card className="overflow-x-hidden">
         <CardHeader>
           <Badge className="w-fit">Paper records</Badge>
           <CardTitle>編輯資料庫內容</CardTitle>
@@ -199,34 +199,42 @@ export function PaperRecordsSection(props: Props) {
               共 <span className="font-semibold text-[var(--foreground)]">{props.paperTotalItems}</span> 筆 · 第{" "}
               <span className="font-semibold text-[var(--foreground)]">{props.paperPage}</span> / {props.paperTotalPages} 頁
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" variant="outline" size="sm" disabled={props.paperPage <= 1} onClick={() => props.onPaperPageChange((current) => current - 1)}>
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={props.paperPage <= 1}
+                  onClick={() => props.onPaperPageChange((current) => current - 1)}
+                >
                 <ChevronLeft className="mr-1 h-4 w-4" />
                 上一頁
-              </Button>
-              {visiblePageNumbers.map((pageNumber) => (
-                <Button
-                  key={pageNumber}
-                  type="button"
-                  size="sm"
-                  variant={pageNumber === props.paperPage ? "default" : "outline"}
-                  onClick={() => props.onPaperPageChange(pageNumber)}
-                >
-                  {pageNumber}
                 </Button>
-              ))}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={props.paperPage >= props.paperTotalPages}
-                onClick={() => props.onPaperPageChange((current) => current + 1)}
-              >
-                下一頁
-                <ChevronRight className="ml-1 h-4 w-4" />
-              </Button>
+                {visiblePageNumbers.map((pageNumber) => (
+                  <Button
+                    key={pageNumber}
+                    type="button"
+                    size="sm"
+                    variant={pageNumber === props.paperPage ? "default" : "outline"}
+                    onClick={() => props.onPaperPageChange(pageNumber)}
+                  >
+                    {pageNumber}
+                  </Button>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={props.paperPage >= props.paperTotalPages}
+                  onClick={() => props.onPaperPageChange((current) => current + 1)}
+                >
+                  下一頁
+                  <ChevronRight className="ml-1 h-4 w-4" />
+                </Button>
+              </div>
               <form
-                className="flex items-center gap-2"
+                className="flex min-w-0 items-center gap-2"
                 onSubmit={(event) => {
                   event.preventDefault();
                   const nextPage = Number(props.paperPageInput);
@@ -236,7 +244,7 @@ export function PaperRecordsSection(props: Props) {
                 }}
               >
                 <input
-                  className="w-20 rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm"
+                  className="min-w-0 flex-1 rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm sm:w-20 sm:flex-none"
                   inputMode="numeric"
                   pattern="[0-9]*"
                   value={props.paperPageInput}
@@ -251,20 +259,20 @@ export function PaperRecordsSection(props: Props) {
           </div>
 
           <form
-            className="grid gap-3 rounded-2xl border border-[var(--border)] bg-white/70 p-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(180px,1fr)_120px_120px_auto_auto]"
+            className="grid min-w-0 gap-3 rounded-2xl border border-[var(--border)] bg-white/70 p-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(180px,1fr)_120px_120px_auto_auto]"
             onSubmit={props.onSearchSubmit}
           >
-            <div className="relative flex-1">
+            <div className="relative min-w-0 flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted-foreground)]" />
               <input
-                className="w-full rounded-xl border border-[var(--border)] bg-white px-10 py-2 text-sm"
+                className="w-full min-w-0 rounded-xl border border-[var(--border)] bg-white px-10 py-2 text-sm"
                 value={props.paperSearchQuery}
                 onChange={(event) => props.onPaperSearchQueryChange(event.target.value)}
                 placeholder="用關鍵字搜尋 title、venue、abstract 或 source URL"
               />
             </div>
             <select
-              className="rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm"
+              className="min-w-0 rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm"
               value={props.paperConferenceFilter}
               onChange={(event) => props.onPaperConferenceFilterChange(event.target.value)}
             >
@@ -278,7 +286,7 @@ export function PaperRecordsSection(props: Props) {
               ))}
             </select>
             <input
-              className="rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm"
+              className="min-w-0 rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm"
               inputMode="numeric"
               pattern="[0-9]*"
               value={props.paperYearFromFilter}
@@ -286,15 +294,15 @@ export function PaperRecordsSection(props: Props) {
               placeholder="起始年份"
             />
             <input
-              className="rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm"
+              className="min-w-0 rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm"
               inputMode="numeric"
               pattern="[0-9]*"
               value={props.paperYearToFilter}
               onChange={(event) => props.onPaperYearToFilterChange(event.target.value)}
               placeholder="結束年份"
             />
-            <Button type="submit">搜尋</Button>
-            <Button type="button" variant="outline" onClick={props.onClearFilters}>
+            <Button className="w-full lg:w-auto" type="submit">搜尋</Button>
+            <Button className="w-full lg:w-auto" type="button" variant="outline" onClick={props.onClearFilters}>
               清除
             </Button>
           </form>
@@ -328,11 +336,16 @@ export function PaperRecordsSection(props: Props) {
                       </div>
                     ) : null}
                   </div>
-                  <div className="flex flex-col gap-2">
-                    <Button variant="outline" onClick={() => props.onEditPaperChange({ ...paper })}>
+                  <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[11rem]">
+                    <Button className="w-full whitespace-normal text-center leading-snug" variant="outline" onClick={() => props.onEditPaperChange({ ...paper })}>
                       編輯
                     </Button>
-                    <Button variant="outline" onClick={() => props.onResolveConference(paper.id)} disabled={props.resolvingConferencePaperId === paper.id}>
+                    <Button
+                      className="w-full whitespace-normal text-center leading-snug"
+                      variant="outline"
+                      onClick={() => props.onResolveConference(paper.id)}
+                      disabled={props.resolvingConferencePaperId === paper.id}
+                    >
                       {props.resolvingConferencePaperId === paper.id ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       ) : (
@@ -340,7 +353,12 @@ export function PaperRecordsSection(props: Props) {
                       )}
                       綁定 conference 實體
                     </Button>
-                    <Button variant="outline" onClick={() => props.onPaperDelete(paper.id)} disabled={props.deletingPaperId === paper.id}>
+                    <Button
+                      className="w-full whitespace-normal text-center leading-snug"
+                      variant="outline"
+                      onClick={() => props.onPaperDelete(paper.id)}
+                      disabled={props.deletingPaperId === paper.id}
+                    >
                       {props.deletingPaperId === paper.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
                       刪除
                     </Button>

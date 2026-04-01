@@ -87,7 +87,7 @@ export function IngestionPanel({
               {isImportLoading ? "匯入工作進行中" : "建立匯入工作"}
             </Button>
             <Button
-              className="border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800 sm:w-44"
+              className="border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--muted)] sm:w-44"
               type="button"
               variant="outline"
               disabled={!canCancelImport || isCancellingImport}

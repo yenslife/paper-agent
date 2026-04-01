@@ -4,17 +4,17 @@
 
 @layer base {
   :root {
-    --background: oklch(0.98 0.01 95);
-    --foreground: oklch(0.2 0.03 240);
+    --background: oklch(0.985 0 0);
+    --foreground: oklch(0.18 0 0);
     --card: oklch(1 0 0);
-    --card-foreground: oklch(0.2 0.03 240);
-    --muted: oklch(0.95 0.01 90);
-    --muted-foreground: oklch(0.48 0.02 240);
-    --border: oklch(0.9 0.02 95);
-    --primary: oklch(0.55 0.16 215);
-    --primary-foreground: oklch(0.99 0 0);
-    --accent: oklch(0.88 0.08 85);
-    --accent-foreground: oklch(0.25 0.03 240);
+    --card-foreground: oklch(0.18 0 0);
+    --muted: oklch(0.95 0 0);
+    --muted-foreground: oklch(0.45 0 0);
+    --border: oklch(0.88 0 0);
+    --primary: oklch(0.14 0 0);
+    --primary-foreground: oklch(0.98 0 0);
+    --accent: oklch(0.92 0 0);
+    --accent-foreground: oklch(0.18 0 0);
   }
 
   * {
@@ -26,9 +26,9 @@
     min-width: 320px;
     min-height: 100vh;
     background:
-      radial-gradient(circle at top left, rgba(245, 206, 120, 0.4), transparent 26%),
-      radial-gradient(circle at top right, rgba(92, 148, 255, 0.16), transparent 32%),
-      linear-gradient(180deg, #fcfaf5 0%, #f7f1e5 100%);
+      radial-gradient(circle at top left, rgba(0, 0, 0, 0.04), transparent 24%),
+      radial-gradient(circle at top right, rgba(0, 0, 0, 0.03), transparent 28%),
+      linear-gradient(180deg, #fafafa 0%, #f1f1f1 100%);
     color: var(--foreground);
     font-family: "IBM Plex Sans", "Noto Sans TC", sans-serif;
   }
