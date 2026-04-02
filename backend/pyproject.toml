@@ -12,6 +12,7 @@ dependencies = [
     "greenlet>=3.3.2",
     "httpx>=0.28.1",
     "langchain-openai>=1.1.12",
+    "markitdown[pdf]>=0.1.5",
     "openai>=2.30.0",
     "openai-agents[sqlalchemy]>=0.13.3",
     "pgvector>=0.4.2",

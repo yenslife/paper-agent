@@ -14,6 +14,7 @@ from paper_agent.models import IngestStatus, Paper, PaperEmbedding
 from paper_agent.schemas import ChatMessage, ChatResponse, Citation, SourceSummary
 from paper_agent.services.ingestion import IngestionService
 from paper_agent.services.paper_lookup import PaperLookupService
+from paper_agent.services.pdf_markdown import PdfMarkdownService
 from paper_agent.services.retrieval import RetrievalService
 
 
@@ -37,6 +38,7 @@ class AgentContext:
     retrieval_service: RetrievalService
     ingestion_service: IngestionService
     paper_lookup_service: PaperLookupService
+    pdf_markdown_service: PdfMarkdownService
     local_citations: dict[str, Citation] = field(default_factory=dict)
 
 
@@ -57,10 +59,12 @@ class ChatService:
         retrieval_service: RetrievalService,
         ingestion_service: IngestionService,
         paper_lookup_service: PaperLookupService,
+        pdf_markdown_service: PdfMarkdownService,
     ) -> None:
         self.retrieval_service = retrieval_service
         self.ingestion_service = ingestion_service
         self.paper_lookup_service = paper_lookup_service
+        self.pdf_markdown_service = pdf_markdown_service
         self.settings = get_settings()
 
     async def run_chat(
@@ -76,6 +80,7 @@ class ChatService:
             retrieval_service=self.retrieval_service,
             ingestion_service=self.ingestion_service,
             paper_lookup_service=self.paper_lookup_service,
+            pdf_markdown_service=self.pdf_markdown_service,
         )
         agent = self._build_agent()
         input_text = self._format_conversation_input(message, history, has_persistent_session=session_id is not None)
@@ -369,6 +374,76 @@ class ChatService:
             )
 
         @function_tool
+        async def convert_pdf_url_to_markdown(
+            ctx: RunContextWrapper[AgentContext],
+            pdf_url: str,
+            start_char: int = 0,
+            max_chars: int | None = None,
+        ) -> str:
+            """Convert a PDF URL to markdown and return a chunk. Use this when you need to read PDF content directly."""
+
+            chunk = await ctx.context.pdf_markdown_service.convert_pdf_url_to_markdown(
+                pdf_url,
+                start_char=start_char,
+                max_chars=max_chars or self.settings.pdf_markdown_chunk_chars,
+            )
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "chunk": chunk.to_dict(),
+                },
+                ensure_ascii=False,
+            )
+
+        @function_tool
+        async def convert_paper_pdf_to_markdown(
+            ctx: RunContextWrapper[AgentContext],
+            title: str,
+            paper_url: str | None = None,
+            source_page_url: str | None = None,
+            venue: str | None = None,
+            year: int | None = None,
+            start_char: int = 0,
+            max_chars: int | None = None,
+        ) -> str:
+            """Resolve a paper PDF from a paper URL or source page and convert it to markdown. Use this when the user asks to read the PDF content of a specific paper."""
+
+            chunk = await ctx.context.pdf_markdown_service.convert_paper_url_to_markdown(
+                title=title,
+                paper_url=paper_url,
+                source_page_url=source_page_url,
+                venue=venue,
+                year=year,
+                start_char=start_char,
+                max_chars=max_chars or self.settings.pdf_markdown_chunk_chars,
+            )
+            if not chunk:
+                return json.dumps(
+                    {
+                        "status": "not_found",
+                        "message": "Could not resolve a PDF URL for the requested paper.",
+                    },
+                    ensure_ascii=False,
+                )
+
+            citation_key = f"web:{chunk.source_url}"
+            ctx.context.local_citations[citation_key] = Citation(
+                title=title,
+                url=chunk.resolved_pdf_url,
+                source_page_url=paper_url or source_page_url,
+                venue=venue,
+                year=year,
+                source_type="web_search",
+            )
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "chunk": chunk.to_dict(),
+                },
+                ensure_ascii=False,
+            )
+
+        @function_tool
         async def import_markdown_papers(
             ctx: RunContextWrapper[AgentContext],
             markdown_content: str,
@@ -406,6 +481,7 @@ Rules:
 1. For any request that depends on papers, first use `search_papers`.
 1a. If the user asks for the abstract of a specific paper, use `find_paper_abstract`.
 1b. If the user needs a specific paper's PDF, slide, video, DOI, or paper page, use `lookup_paper_on_web`.
+1c. If the user needs to read the PDF content itself, use `convert_paper_pdf_to_markdown` or `convert_pdf_url_to_markdown`. Read it in chunks if needed.
 2. The `web_search` tool is currently a dummy placeholder. If you call it, explain that external web search is not configured yet.
 3. Never claim you read a paper unless it came from `get_paper_details`.
 4. Citations must only include URLs that came from trusted tools.
@@ -424,6 +500,8 @@ Rules:
                 get_paper_details,
                 find_paper_abstract,
                 lookup_paper_on_web,
+                convert_pdf_url_to_markdown,
+                convert_paper_pdf_to_markdown,
                 import_markdown_papers,
                 web_search,
             ],

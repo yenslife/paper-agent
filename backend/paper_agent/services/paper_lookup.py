@@ -66,11 +66,30 @@ class PaperLookupService:
             )
 
         if page_lookup and best_external:
-            return self._merge_lookup_results(page_lookup, best_external, normalized_title)
+            merged = self._merge_lookup_results(page_lookup, best_external, normalized_title)
+            return self._enrich_result_from_inputs(
+                merged,
+                paper_url=paper_url,
+                source_page_url=source_page_url,
+                venue=venue,
+                year=year,
+            )
         if best_external:
-            return best_external
+            return self._enrich_result_from_inputs(
+                best_external,
+                paper_url=paper_url,
+                source_page_url=source_page_url,
+                venue=venue,
+                year=year,
+            )
         if page_lookup:
-            return page_lookup
+            return self._enrich_result_from_inputs(
+                page_lookup,
+                paper_url=paper_url,
+                source_page_url=source_page_url,
+                venue=venue,
+                year=year,
+            )
         return None
 
     async def _lookup_from_known_page(
@@ -96,8 +115,16 @@ class PaperLookupService:
                 return await self._lookup_ieee_page(candidate_url, title, venue=venue, year=year)
             if "dl.acm.org" in domain:
                 return await self._lookup_acm_page(candidate_url, title, venue=venue, year=year)
+            if "arxiv.org" in domain:
+                return await self._lookup_arxiv_page(candidate_url, title, venue=venue, year=year)
         except httpx.HTTPError:
-            return None
+            return self._infer_result_from_url(
+                candidate_url,
+                title=title,
+                source_page_url=source_page_url,
+                venue=venue,
+                year=year,
+            )
         return None
 
     async def _lookup_ndss_page(
@@ -147,6 +174,25 @@ class PaperLookupService:
         if not html:
             return None
         return self._extract_acm_page_metadata(html, url=url, title=title, venue=venue, year=year)
+
+    async def _lookup_arxiv_page(
+        self,
+        url: str,
+        title: str,
+        venue: str | None,
+        year: int | None,
+    ) -> PaperLookupResult | None:
+        normalized_url = self._normalize_arxiv_url(url)
+        html = await self._fetch_html(normalized_url)
+        if not html:
+            return None
+        return self._extract_arxiv_page_metadata(
+            html,
+            url=normalized_url,
+            title=title,
+            venue=venue,
+            year=year,
+        )
 
     async def _lookup_via_semantic_scholar(
         self,
@@ -261,6 +307,95 @@ class PaperLookupService:
                 ),
             )
         return merged
+
+    def _enrich_result_from_inputs(
+        self,
+        result: PaperLookupResult,
+        *,
+        paper_url: str | None,
+        source_page_url: str | None,
+        venue: str | None,
+        year: int | None,
+    ) -> PaperLookupResult:
+        if not result.url and paper_url and not self._looks_like_pdf_url(paper_url):
+            result.url = paper_url
+        result.source_page_url = result.source_page_url or source_page_url
+        result.venue = result.venue or venue
+        result.year = result.year or year
+
+        inferred = self._infer_result_from_url(
+            paper_url,
+            title=result.title or "",
+            source_page_url=source_page_url,
+            venue=venue,
+            year=year,
+        )
+        if inferred:
+            result.url = result.url or inferred.url
+            result.source_page_url = result.source_page_url or inferred.source_page_url
+            result.pdf_url = result.pdf_url or inferred.pdf_url
+            result.preprint_pdf_url = result.preprint_pdf_url or inferred.preprint_pdf_url
+            result.slide_url = result.slide_url or inferred.slide_url
+            result.video_url = result.video_url or inferred.video_url
+            result.venue = result.venue or inferred.venue
+            result.year = result.year or inferred.year
+            result.doi = result.doi or inferred.doi
+            result.external_ids = {**result.external_ids, **inferred.external_ids}
+            for note in inferred.notes:
+                if note not in result.notes:
+                    result.notes.append(note)
+        return result
+
+    def _infer_result_from_url(
+        self,
+        url: str | None,
+        *,
+        title: str,
+        source_page_url: str | None,
+        venue: str | None,
+        year: int | None,
+    ) -> PaperLookupResult | None:
+        if not url:
+            return None
+        parsed = urlparse(url)
+        domain = parsed.netloc.lower()
+
+        if "dl.acm.org" in domain:
+            doi = self._extract_doi_from_acm_url(url)
+            if not doi:
+                return None
+            return PaperLookupResult(
+                provider="acm_url",
+                confidence=0.9,
+                title=title or None,
+                url=url if not self._looks_like_pdf_url(url) else f"https://dl.acm.org/doi/{doi}",
+                source_page_url=source_page_url,
+                pdf_url=f"https://dl.acm.org/doi/pdf/{doi}",
+                venue=venue or "ACM",
+                year=year,
+                doi=doi,
+                external_ids={"DOI": doi},
+                notes=["Derived ACM PDF URL from DOI page URL."],
+            )
+
+        if "arxiv.org" in domain:
+            arxiv_abs_url = self._normalize_arxiv_url(url)
+            paper_id = self._extract_arxiv_id(arxiv_abs_url)
+            if not paper_id:
+                return None
+            return PaperLookupResult(
+                provider="arxiv_url",
+                confidence=0.92,
+                title=title or None,
+                url=arxiv_abs_url,
+                source_page_url=source_page_url,
+                pdf_url=f"https://arxiv.org/pdf/{paper_id}.pdf",
+                venue=venue or "arXiv",
+                year=year,
+                notes=["Derived arXiv PDF URL from the arXiv paper URL."],
+            )
+
+        return None
 
     def _extract_ndss_page_metadata(
         self,
@@ -489,6 +624,48 @@ class PaperLookupService:
             notes=["Metadata extracted from the ACM Digital Library page."],
         )
 
+    def _extract_arxiv_page_metadata(
+        self,
+        html: str,
+        *,
+        url: str,
+        title: str,
+        venue: str | None,
+        year: int | None,
+    ) -> PaperLookupResult:
+        soup = BeautifulSoup(html, "html.parser")
+        normalized_title = self._normalize_title(title)
+        page_title = title
+        title_meta = soup.find("meta", attrs={"name": "citation_title"})
+        if title_meta and title_meta.get("content"):
+            page_title = self.abstract_fetcher._clean_text(title_meta["content"]) or title
+        elif soup.title:
+            page_title = self.abstract_fetcher._clean_text(soup.title.get_text(" ", strip=True)) or title  # pyright: ignore[reportPrivateUsage]
+
+        abstract = self.abstract_fetcher._extract_abstract(html)  # pyright: ignore[reportPrivateUsage]
+        paper_id = self._extract_arxiv_id(url)
+        pdf_url = f"https://arxiv.org/pdf/{paper_id}.pdf" if paper_id else None
+
+        return PaperLookupResult(
+            provider="arxiv_page",
+            confidence=self._score_candidate(
+                normalized_title,
+                self._normalize_title(page_title or title),
+                year=year,
+                expected_year=year,
+                venue=venue,
+                expected_venue=venue,
+            ),
+            title=page_title or title,
+            abstract=abstract,
+            url=url,
+            source_page_url=url,
+            pdf_url=pdf_url,
+            venue=venue or "arXiv",
+            year=year,
+            notes=["Metadata extracted from the arXiv abstract page."],
+        )
+
     def _pick_semantic_scholar_match(
         self,
         results: list[dict],
@@ -617,6 +794,29 @@ class PaperLookupService:
             doi = path.removeprefix("doi/").removeprefix("pdf/")
             return doi or None
         return None
+
+    def _normalize_arxiv_url(self, url: str) -> str:
+        parsed = urlparse(url)
+        if "arxiv.org" not in parsed.netloc.lower():
+            return url
+        path = parsed.path
+        if path.startswith("/pdf/"):
+            paper_id = path.removeprefix("/pdf/").removesuffix(".pdf")
+            return f"{parsed.scheme or 'https'}://{parsed.netloc}/abs/{paper_id}"
+        return f"{parsed.scheme or 'https'}://{parsed.netloc}{path}"
+
+    def _extract_arxiv_id(self, url: str) -> str | None:
+        parsed = urlparse(url)
+        path = parsed.path.strip("/")
+        if path.startswith("abs/"):
+            return path.removeprefix("abs/") or None
+        if path.startswith("pdf/"):
+            return path.removeprefix("pdf/").removesuffix(".pdf") or None
+        return None
+
+    def _looks_like_pdf_url(self, url: str) -> bool:
+        lowered = url.lower()
+        return lowered.endswith(".pdf") or "/doi/pdf/" in lowered or "stamp.jsp" in lowered
 
     def _score_candidate(
         self,

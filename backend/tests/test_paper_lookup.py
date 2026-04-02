@@ -1,4 +1,5 @@
 from paper_agent.services.paper_lookup import PaperLookupService
+import pytest
 
 
 def test_extract_ndss_page_metadata_parses_pdf_slide_and_video_links() -> None:
@@ -128,3 +129,83 @@ def test_extract_acm_page_metadata_builds_pdf_url_from_doi() -> None:
     assert result.pdf_url == "https://dl.acm.org/doi/pdf/10.1145/3719027.3744836"
     assert result.doi == "10.1145/3719027.3744836"
     assert result.abstract == "This is an ACM abstract."
+
+
+def test_extract_arxiv_page_metadata_builds_pdf_url_and_abstract() -> None:
+    service = PaperLookupService()
+    html = """
+    <html>
+      <head>
+        <meta name="citation_title" content="Sample arXiv Paper" />
+      </head>
+      <body>
+        <blockquote class="abstract">
+          Abstract: This is an arXiv abstract.
+        </blockquote>
+      </body>
+    </html>
+    """
+
+    result = service._extract_arxiv_page_metadata(  # pyright: ignore[reportPrivateUsage]
+        html,
+        url="https://arxiv.org/abs/2501.00001",
+        title="Sample arXiv Paper",
+        venue=None,
+        year=2025,
+    )
+
+    assert result.pdf_url == "https://arxiv.org/pdf/2501.00001.pdf"
+    assert result.abstract == "This is an arXiv abstract."
+    assert result.venue == "arXiv"
+
+
+@pytest.mark.asyncio
+async def test_lookup_paper_enriches_openalex_fallback_with_acm_pdf_and_inputs() -> None:
+    service = PaperLookupService()
+
+    async def fake_page_lookup(*args, **kwargs):  # type: ignore[no-untyped-def]
+        return None
+
+    async def fake_semantic_lookup(*args, **kwargs):  # type: ignore[no-untyped-def]
+        return None
+
+    async def fake_openalex_lookup(*args, **kwargs):  # type: ignore[no-untyped-def]
+        return service._pick_openalex_match(  # pyright: ignore[reportPrivateUsage]
+            [
+                {
+                    "display_name": "SecAlign: Defending Against Prompt Injection with Preference Optimization",
+                    "publication_year": 2025,
+                    "ids": {
+                        "doi": "https://doi.org/10.1145/3719027.3744836",
+                        "openalex": "https://openalex.org/W4416549384",
+                    },
+                    "primary_location": {
+                        "landing_page_url": "https://doi.org/10.1145/3719027.3744836",
+                    },
+                    "best_oa_location": {},
+                    "abstract_inverted_index": None,
+                }
+            ],
+            title="SecAlign: Defending Against Prompt Injection with Preference Optimization",
+            venue="ACM CCS",
+            year=2025,
+        )
+
+    service._lookup_from_known_page = fake_page_lookup  # type: ignore[method-assign]
+    service._lookup_via_semantic_scholar = fake_semantic_lookup  # type: ignore[method-assign]
+    service._lookup_via_openalex = fake_openalex_lookup  # type: ignore[method-assign]
+
+    result = await service.lookup_paper(
+        title="SecAlign: Defending Against Prompt Injection with Preference Optimization",
+        paper_url="https://dl.acm.org/doi/10.1145/3719027.3744836",
+        source_page_url="https://www.sigsac.org/ccs/CCS2025/accepted-papers/",
+        venue="ACM CCS",
+        year=2025,
+    )
+
+    assert result is not None
+    assert result.provider == "openalex"
+    assert result.pdf_url == "https://dl.acm.org/doi/pdf/10.1145/3719027.3744836"
+    assert result.venue == "ACM CCS"
+    assert result.source_page_url == "https://www.sigsac.org/ccs/CCS2025/accepted-papers/"
+    assert result.year == 2025
