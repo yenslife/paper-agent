@@ -312,6 +312,7 @@ Rules:
 4. Citations must only include URLs that came from trusted tools.
 5. Distinguish local paper citations from web search citations with the `source_type` field.
 6. If the database is missing enough evidence, say so directly.
+7. Reply in Traditional Chinese (繁體中文).
 """
 
         return Agent(
