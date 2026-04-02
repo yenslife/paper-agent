@@ -13,6 +13,7 @@ from paper_agent.db import engine
 from paper_agent.models import IngestStatus, Paper, PaperEmbedding
 from paper_agent.schemas import ChatMessage, ChatResponse, Citation, SourceSummary
 from paper_agent.services.ingestion import IngestionService
+from paper_agent.services.paper_lookup import PaperLookupService
 from paper_agent.services.retrieval import RetrievalService
 
 
@@ -35,6 +36,7 @@ class AgentContext:
     session: AsyncSession
     retrieval_service: RetrievalService
     ingestion_service: IngestionService
+    paper_lookup_service: PaperLookupService
     local_citations: dict[str, Citation] = field(default_factory=dict)
 
 
@@ -50,9 +52,15 @@ def _paper_to_citation(paper: Paper) -> Citation:
 
 
 class ChatService:
-    def __init__(self, retrieval_service: RetrievalService, ingestion_service: IngestionService) -> None:
+    def __init__(
+        self,
+        retrieval_service: RetrievalService,
+        ingestion_service: IngestionService,
+        paper_lookup_service: PaperLookupService,
+    ) -> None:
         self.retrieval_service = retrieval_service
         self.ingestion_service = ingestion_service
+        self.paper_lookup_service = paper_lookup_service
         self.settings = get_settings()
 
     async def run_chat(
@@ -67,6 +75,7 @@ class ChatService:
             session=session,
             retrieval_service=self.retrieval_service,
             ingestion_service=self.ingestion_service,
+            paper_lookup_service=self.paper_lookup_service,
         )
         agent = self._build_agent()
         input_text = self._format_conversation_input(message, history, has_persistent_session=session_id is not None)
@@ -159,6 +168,8 @@ class ChatService:
         async def find_paper_abstract(
             ctx: RunContextWrapper[AgentContext],
             title: str,
+            paper_url: str | None = None,
+            source_page_url: str | None = None,
             venue: str | None = None,
             year: int | None = None,
         ) -> str:
@@ -190,22 +201,28 @@ class ChatService:
                         ensure_ascii=False,
                     )
 
-                lookup = await ctx.context.ingestion_service.abstract_fetcher.lookup_abstract_by_title(
+                lookup = await ctx.context.paper_lookup_service.lookup_paper(
                     title=best_local.title,
+                    paper_url=best_local.url or paper_url,
+                    source_page_url=best_local.source_page_url or source_page_url,
                     venue=best_local.venue or venue,
                     year=best_local.year or year,
                 )
                 if lookup:
-                    best_local.abstract = lookup.abstract
+                    if lookup.abstract:
+                        best_local.abstract = lookup.abstract
                     if not best_local.url and lookup.url:
                         best_local.url = lookup.url
                     if not best_local.venue and lookup.venue:
                         best_local.venue = lookup.venue
                     if not best_local.year and lookup.year:
                         best_local.year = lookup.year
-                    best_local.ingest_status = IngestStatus.READY
+                    if best_local.abstract:
+                        best_local.ingest_status = IngestStatus.READY
 
-                    parts = [best_local.title, lookup.abstract]
+                    parts = [best_local.title]
+                    if best_local.abstract:
+                        parts.append(best_local.abstract)
                     if best_local.venue:
                         parts.append(best_local.venue)
                     if best_local.year:
@@ -224,9 +241,10 @@ class ChatService:
                     await ctx.context.session.commit()
                     await ctx.context.session.refresh(best_local)
                     ctx.context.local_citations[best_local.id] = _paper_to_citation(best_local)
+                    status = "enriched_local" if best_local.abstract else "metadata_only_local"
                     return json.dumps(
                         {
-                            "status": "enriched_local",
+                            "status": status,
                             "paper": {
                                 "id": best_local.id,
                                 "title": best_local.title,
@@ -236,17 +254,44 @@ class ChatService:
                                 "venue": best_local.venue,
                                 "year": best_local.year,
                                 "source_type": "local_paper_db",
+                                "pdf_url": lookup.pdf_url,
+                                "slide_url": lookup.slide_url,
+                                "video_url": lookup.video_url,
+                                "provider": lookup.provider,
                             },
                         },
                         ensure_ascii=False,
                     )
 
-            lookup = await ctx.context.ingestion_service.abstract_fetcher.lookup_abstract_by_title(
+            lookup = await ctx.context.paper_lookup_service.lookup_paper(
                 title=title,
+                paper_url=paper_url,
+                source_page_url=source_page_url,
                 venue=venue,
                 year=year,
             )
             if lookup:
+                if not lookup.abstract:
+                    return json.dumps(
+                        {
+                            "status": "metadata_only",
+                            "paper": {
+                                "title": lookup.title,
+                                "url": lookup.url,
+                                "source_page_url": lookup.source_page_url,
+                                "pdf_url": lookup.pdf_url,
+                                "slide_url": lookup.slide_url,
+                                "video_url": lookup.video_url,
+                                "venue": lookup.venue,
+                                "year": lookup.year,
+                                "provider": lookup.provider,
+                                "confidence": lookup.confidence,
+                                "source_type": "web_search",
+                            },
+                            "message": "Found paper metadata on the web, but no abstract was available.",
+                        },
+                        ensure_ascii=False,
+                    )
                 return json.dumps(
                     {
                         "status": "found_external",
@@ -254,8 +299,14 @@ class ChatService:
                             "title": lookup.title,
                             "abstract": lookup.abstract,
                             "url": lookup.url,
+                            "source_page_url": lookup.source_page_url,
+                            "pdf_url": lookup.pdf_url,
+                            "slide_url": lookup.slide_url,
+                            "video_url": lookup.video_url,
                             "venue": lookup.venue,
                             "year": lookup.year,
+                            "provider": lookup.provider,
+                            "confidence": lookup.confidence,
                             "source_type": "web_search",
                         },
                     },
@@ -266,6 +317,53 @@ class ChatService:
                 {
                     "status": "not_found",
                     "message": "Abstract not found in the local database or via external metadata lookup.",
+                },
+                ensure_ascii=False,
+            )
+
+        @function_tool
+        async def lookup_paper_on_web(
+            ctx: RunContextWrapper[AgentContext],
+            title: str,
+            paper_url: str | None = None,
+            source_page_url: str | None = None,
+            venue: str | None = None,
+            year: int | None = None,
+        ) -> str:
+            """Look up paper metadata on the web. Use this when you need a paper page, PDF, slides, video, DOI, or abstract for a specific paper."""
+
+            lookup = await ctx.context.paper_lookup_service.lookup_paper(
+                title=title,
+                paper_url=paper_url,
+                source_page_url=source_page_url,
+                venue=venue,
+                year=year,
+            )
+            if not lookup:
+                return json.dumps(
+                    {
+                        "status": "not_found",
+                        "message": "No trusted external paper metadata was found for the requested title.",
+                    },
+                    ensure_ascii=False,
+                )
+
+            citation_url = lookup.url or lookup.source_page_url
+            if citation_url:
+                citation_key = f"web:{citation_url}"
+                ctx.context.local_citations[citation_key] = Citation(
+                    title=lookup.title or title,
+                    url=citation_url,
+                    source_page_url=lookup.source_page_url,
+                    venue=lookup.venue,
+                    year=lookup.year,
+                    source_type="web_search",
+                )
+
+            return json.dumps(
+                {
+                    "status": "found",
+                    "paper": lookup.to_dict(),
                 },
                 ensure_ascii=False,
             )
@@ -307,6 +405,7 @@ You are a research paper assistant.
 Rules:
 1. For any request that depends on papers, first use `search_papers`.
 1a. If the user asks for the abstract of a specific paper, use `find_paper_abstract`.
+1b. If the user needs a specific paper's PDF, slide, video, DOI, or paper page, use `lookup_paper_on_web`.
 2. The `web_search` tool is currently a dummy placeholder. If you call it, explain that external web search is not configured yet.
 3. Never claim you read a paper unless it came from `get_paper_details`.
 4. Citations must only include URLs that came from trusted tools.
@@ -324,6 +423,7 @@ Rules:
                 search_papers,
                 get_paper_details,
                 find_paper_abstract,
+                lookup_paper_on_web,
                 import_markdown_papers,
                 web_search,
             ],

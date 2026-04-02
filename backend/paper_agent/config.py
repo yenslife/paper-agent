@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     parser_chunk_size_chars: int = 12000
     parser_chunk_overlap_chars: int = 1800
     parser_max_concurrency: int = 4
+    semantic_scholar_api_key: str | None = None
     paper_fetch_user_agent: str = Field(
         default="paper-agent/0.1",
         description="HTTP user agent for fetching paper pages.",
