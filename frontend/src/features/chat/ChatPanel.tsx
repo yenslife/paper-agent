@@ -26,7 +26,7 @@ export function ChatPanel({ messages, prompt, isChatLoading, error, onPromptChan
   }
 
   return (
-    <Card className="flex min-h-[720px] flex-col lg:h-[720px] lg:min-h-0">
+    <Card className="flex w-full min-h-[720px] flex-col lg:h-[720px] lg:min-h-0">
       <CardHeader>
         <Badge className="w-fit bg-[var(--primary)] text-[var(--primary-foreground)]">Chat agent</Badge>
         <CardTitle className="flex items-center gap-3">

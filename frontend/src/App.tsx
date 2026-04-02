@@ -3,7 +3,9 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { buildApiUrl } from "./lib/api";
 import { ChatPanel } from "./features/chat/ChatPanel";
 import { IngestionPanel } from "./features/ingestion/IngestionPanel";
+import { AppSidebar, AppView, getViewTitle } from "./features/navigation/AppSidebar";
 import { PaperRecordsSection } from "./features/papers/PaperRecordsSection";
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "./components/ui/sidebar";
 import {
   BatchConferenceBindingResult,
   ChatMessage,
@@ -23,6 +25,7 @@ export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatSessionId, setChatSessionId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
+  const [currentView, setCurrentView] = useState<AppView>("chat");
   const [sourceUrlInput, setSourceUrlInput] = useState("");
   const [markdown, setMarkdown] = useState(
     "## ICLR 2025 accepted papers\n\n- [Example Paper](https://arxiv.org/abs/2501.00001)\n- Another Example Paper: https://openreview.net/forum?id=demo",
@@ -52,6 +55,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const chatAbortControllerRef = useRef<AbortController | null>(null);
   const isImportLoading = isImportSubmitting || ["pending", "running"].includes(importSummary?.status ?? "");
+  const currentViewTitle = getViewTitle(currentView);
 
   const conversationHistory = useMemo(
     () =>
@@ -375,83 +379,126 @@ export default function App() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-6 px-4 py-8 md:px-8">
-      <section className="grid gap-6 lg:min-h-[720px] lg:grid-cols-[1fr_2fr]">
-        <IngestionPanel
-          markdown={markdown}
-          sourceUrlInput={sourceUrlInput}
-          importSummary={importSummary}
-          isFetchingMarkdown={isFetchingMarkdown}
-          isImportLoading={isImportLoading}
-          isCancellingImport={isCancellingImport}
-          onSourceUrlChange={setSourceUrlInput}
-          onMarkdownChange={setMarkdown}
-          onFetchMarkdown={() => void handleFetchMarkdownFromUrl()}
-          onImportSubmit={handleImportSubmit}
-          onCancelImport={() => void handleCancelImport()}
-        />
-        <ChatPanel
-          messages={messages}
-          prompt={prompt}
-          isChatLoading={isChatLoading}
-          error={error}
-          onPromptChange={setPrompt}
-          onSubmit={handleChatSubmit}
-          onAbort={handleChatAbort}
-        />
-      </section>
+    <SidebarProvider defaultOpen>
+      <div className="min-h-screen w-full bg-[var(--background)]">
+        <div className="flex min-h-screen w-full">
+          <AppSidebar currentView={currentView} onViewChange={setCurrentView} />
 
-      <PaperRecordsSection
-        papers={papers}
-        conferences={conferences}
-        editingPaper={editingPaper}
-        paperSearchQuery={paperSearchQuery}
-        paperConferenceFilter={paperConferenceFilter}
-        paperYearFromFilter={paperYearFromFilter}
-        paperYearToFilter={paperYearToFilter}
-        paperPage={paperPage}
-        paperPageInput={paperPageInput}
-        paperTotalItems={paperTotalItems}
-        paperTotalPages={paperTotalPages}
-        isPaperSaving={isPaperSaving}
-        deletingPaperId={deletingPaperId}
-        resolvingConferencePaperId={resolvingConferencePaperId}
-        isBulkBindingConferences={isBulkBindingConferences}
-        bulkBindingSummary={bulkBindingSummary}
-        conferenceResolutionByPaperId={conferenceResolutionByPaperId}
-        onEditPaperChange={setEditingPaper}
-        onPaperSearchQueryChange={setPaperSearchQuery}
-        onPaperConferenceFilterChange={(value) => {
-          setPaperConferenceFilter(value);
-          setPaperPage(1);
-        }}
-        onPaperYearFromFilterChange={(value) => {
-          setPaperYearFromFilter(value);
-          setPaperPage(1);
-        }}
-        onPaperYearToFilterChange={(value) => {
-          setPaperYearToFilter(value);
-          setPaperPage(1);
-        }}
-        onPaperPageChange={setPaperPage}
-        onPaperPageInputChange={setPaperPageInput}
-        onPaperSave={handlePaperSave}
-        onPaperDelete={(paperId) => void handlePaperDelete(paperId)}
-        onResolveConference={(paperId) => void handleResolveConference(paperId)}
-        onBulkBindConferences={() => void handleBulkBindConferences()}
-        onSearchSubmit={(event) => {
-          event.preventDefault();
-          setPaperPage(1);
-          void loadPapers(1);
-        }}
-        onClearFilters={() => {
-          setPaperSearchQuery("");
-          setPaperConferenceFilter("");
-          setPaperYearFromFilter("");
-          setPaperYearToFilter("");
-          setPaperPage(1);
-        }}
-      />
-    </main>
+          <SidebarInset className="min-w-0 bg-transparent">
+            <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-[var(--border)] bg-[color:rgba(255,255,255,0.9)] px-4 backdrop-blur md:px-8">
+              <SidebarTrigger className="md:hidden" />
+              <div className="min-w-0">
+                <div className="text-xs font-medium uppercase tracking-[0.22em] text-[var(--muted-foreground)]">
+                  Paper Agent
+                </div>
+                <div className="truncate text-lg font-semibold tracking-tight text-[var(--foreground)]">
+                  {currentViewTitle}
+                </div>
+              </div>
+            </header>
+
+            <div className="flex min-h-[calc(100vh-4rem)] min-w-0 flex-col px-4 py-4 md:px-8 md:py-8">
+              {error ? (
+                <div className="mb-4 rounded-xl border border-[var(--border)] bg-[var(--muted)] px-4 py-3 text-sm text-[var(--foreground)]">
+                  {error}
+                </div>
+              ) : null}
+
+              {currentView === "chat" ? (
+                <div className="flex min-h-0 flex-1 w-full">
+                  <div className="mx-auto flex w-full max-w-6xl">
+                    <ChatPanel
+                      messages={messages}
+                      prompt={prompt}
+                      isChatLoading={isChatLoading}
+                      error={null}
+                      onPromptChange={setPrompt}
+                      onSubmit={handleChatSubmit}
+                      onAbort={handleChatAbort}
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              {currentView === "ingestion" ? (
+                <div className="flex min-h-0 flex-1 w-full">
+                  <div className="mx-auto flex w-full max-w-6xl">
+                    <IngestionPanel
+                      markdown={markdown}
+                      sourceUrlInput={sourceUrlInput}
+                      importSummary={importSummary}
+                      isFetchingMarkdown={isFetchingMarkdown}
+                      isImportLoading={isImportLoading}
+                      isCancellingImport={isCancellingImport}
+                      onSourceUrlChange={setSourceUrlInput}
+                      onMarkdownChange={setMarkdown}
+                      onFetchMarkdown={() => void handleFetchMarkdownFromUrl()}
+                      onImportSubmit={handleImportSubmit}
+                      onCancelImport={() => void handleCancelImport()}
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              {currentView === "papers" ? (
+                <div className="min-w-0 flex-1">
+                  <PaperRecordsSection
+                    papers={papers}
+                    conferences={conferences}
+                    editingPaper={editingPaper}
+                    paperSearchQuery={paperSearchQuery}
+                    paperConferenceFilter={paperConferenceFilter}
+                    paperYearFromFilter={paperYearFromFilter}
+                    paperYearToFilter={paperYearToFilter}
+                    paperPage={paperPage}
+                    paperPageInput={paperPageInput}
+                    paperTotalItems={paperTotalItems}
+                    paperTotalPages={paperTotalPages}
+                    isPaperSaving={isPaperSaving}
+                    deletingPaperId={deletingPaperId}
+                    resolvingConferencePaperId={resolvingConferencePaperId}
+                    isBulkBindingConferences={isBulkBindingConferences}
+                    bulkBindingSummary={bulkBindingSummary}
+                    conferenceResolutionByPaperId={conferenceResolutionByPaperId}
+                    onEditPaperChange={setEditingPaper}
+                    onPaperSearchQueryChange={setPaperSearchQuery}
+                    onPaperConferenceFilterChange={(value) => {
+                      setPaperConferenceFilter(value);
+                      setPaperPage(1);
+                    }}
+                    onPaperYearFromFilterChange={(value) => {
+                      setPaperYearFromFilter(value);
+                      setPaperPage(1);
+                    }}
+                    onPaperYearToFilterChange={(value) => {
+                      setPaperYearToFilter(value);
+                      setPaperPage(1);
+                    }}
+                    onPaperPageChange={setPaperPage}
+                    onPaperPageInputChange={setPaperPageInput}
+                    onPaperSave={handlePaperSave}
+                    onPaperDelete={(paperId) => void handlePaperDelete(paperId)}
+                    onResolveConference={(paperId) => void handleResolveConference(paperId)}
+                    onBulkBindConferences={() => void handleBulkBindConferences()}
+                    onSearchSubmit={(event) => {
+                      event.preventDefault();
+                      setPaperPage(1);
+                      void loadPapers(1);
+                    }}
+                    onClearFilters={() => {
+                      setPaperSearchQuery("");
+                      setPaperConferenceFilter("");
+                      setPaperYearFromFilter("");
+                      setPaperYearToFilter("");
+                      setPaperPage(1);
+                    }}
+                  />
+                </div>
+              ) : null}
+            </div>
+          </SidebarInset>
+        </div>
+      </div>
+    </SidebarProvider>
   );
 }

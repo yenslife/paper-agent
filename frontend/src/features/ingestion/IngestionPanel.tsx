@@ -36,7 +36,7 @@ export function IngestionPanel({
     !!importSummary && ["pending", "running"].includes(importSummary.status) && !importSummary.cancel_requested;
 
   return (
-    <Card className="flex min-h-[720px] flex-col overflow-hidden lg:h-[720px] lg:min-h-0">
+    <Card className="flex w-full min-h-[720px] flex-col overflow-hidden lg:h-[720px] lg:min-h-0">
       <CardHeader>
         <Badge className="w-fit bg-[var(--accent)] text-[var(--accent-foreground)]">Paper ingestion</Badge>
         <CardTitle className="flex items-center gap-3">
