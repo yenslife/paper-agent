@@ -78,3 +78,53 @@ def test_score_candidate_penalizes_artifact_evaluation_noise() -> None:
 
     assert exact_score > artifact_score
     assert artifact_score < 0.82
+
+
+def test_extract_ieee_page_metadata_builds_stamp_pdf_url() -> None:
+    service = PaperLookupService()
+    html = """
+    <html>
+      <head>
+        <title>Practical Full-Stack Memory Deduplication Attacks in Sandboxed JavaScript | IEEE Conference Publication</title>
+        <meta name="description" content="A practical memory-deduplication attack in sandboxed JavaScript." />
+        <meta name="citation_doi" content="10.1109/SP61157.2025.00139" />
+      </head>
+      <body></body>
+    </html>
+    """
+
+    result = service._extract_ieee_page_metadata(  # pyright: ignore[reportPrivateUsage]
+        html,
+        url="https://ieeexplore.ieee.org/document/11023476",
+        title="Practical Full-Stack Memory Deduplication Attacks in Sandboxed JavaScript",
+        venue="IEEE Symposium on Security and Privacy",
+        year=2025,
+    )
+
+    assert result.pdf_url == "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=11023476"
+    assert result.doi == "10.1109/SP61157.2025.00139"
+    assert result.abstract == "A practical memory-deduplication attack in sandboxed JavaScript."
+
+
+def test_extract_acm_page_metadata_builds_pdf_url_from_doi() -> None:
+    service = PaperLookupService()
+    html = """
+    <html>
+      <body>
+        <h1>Sample ACM Paper</h1>
+        <meta name="citation_abstract" content="This is an ACM abstract." />
+      </body>
+    </html>
+    """
+
+    result = service._extract_acm_page_metadata(  # pyright: ignore[reportPrivateUsage]
+        html,
+        url="https://dl.acm.org/doi/10.1145/3719027.3744836",
+        title="Sample ACM Paper",
+        venue="ACM CCS",
+        year=2025,
+    )
+
+    assert result.pdf_url == "https://dl.acm.org/doi/pdf/10.1145/3719027.3744836"
+    assert result.doi == "10.1145/3719027.3744836"
+    assert result.abstract == "This is an ACM abstract."

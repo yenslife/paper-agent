@@ -87,10 +87,17 @@ class PaperLookupService:
 
         parsed = urlparse(candidate_url)
         domain = parsed.netloc.lower()
-        if "ndss-symposium.org" in domain:
-            return await self._lookup_ndss_page(candidate_url, title, venue=venue, year=year)
-        if "usenix.org" in domain:
-            return await self._lookup_usenix_page(candidate_url, title, venue=venue, year=year)
+        try:
+            if "ndss-symposium.org" in domain:
+                return await self._lookup_ndss_page(candidate_url, title, venue=venue, year=year)
+            if "usenix.org" in domain:
+                return await self._lookup_usenix_page(candidate_url, title, venue=venue, year=year)
+            if "ieeexplore.ieee.org" in domain:
+                return await self._lookup_ieee_page(candidate_url, title, venue=venue, year=year)
+            if "dl.acm.org" in domain:
+                return await self._lookup_acm_page(candidate_url, title, venue=venue, year=year)
+        except httpx.HTTPError:
+            return None
         return None
 
     async def _lookup_ndss_page(
@@ -116,6 +123,30 @@ class PaperLookupService:
         if not html:
             return None
         return self._extract_usenix_page_metadata(html, url=url, title=title, venue=venue, year=year)
+
+    async def _lookup_ieee_page(
+        self,
+        url: str,
+        title: str,
+        venue: str | None,
+        year: int | None,
+    ) -> PaperLookupResult | None:
+        html = await self._fetch_html(url)
+        if not html:
+            return None
+        return self._extract_ieee_page_metadata(html, url=url, title=title, venue=venue, year=year)
+
+    async def _lookup_acm_page(
+        self,
+        url: str,
+        title: str,
+        venue: str | None,
+        year: int | None,
+    ) -> PaperLookupResult | None:
+        html = await self._fetch_html(url)
+        if not html:
+            return None
+        return self._extract_acm_page_metadata(html, url=url, title=title, venue=venue, year=year)
 
     async def _lookup_via_semantic_scholar(
         self,
@@ -365,6 +396,99 @@ class PaperLookupService:
             notes=["Metadata extracted from the USENIX paper page."],
         )
 
+    def _extract_ieee_page_metadata(
+        self,
+        html: str,
+        *,
+        url: str,
+        title: str,
+        venue: str | None,
+        year: int | None,
+    ) -> PaperLookupResult:
+        soup = BeautifulSoup(html, "html.parser")
+        normalized_title = self._normalize_title(title)
+        page_title = (
+            self.abstract_fetcher._clean_text(soup.title.get_text(" ", strip=True))  # pyright: ignore[reportPrivateUsage]
+            if soup.title
+            else title
+        )
+        meta_abstract = soup.find("meta", attrs={"name": "description"}) or soup.find(
+            "meta", attrs={"property": "og:description"}
+        )
+        abstract = None
+        if meta_abstract and meta_abstract.get("content"):
+            abstract = self.abstract_fetcher._clean_text(meta_abstract["content"])  # pyright: ignore[reportPrivateUsage]
+
+        document_id = self._extract_ieee_document_id(url)
+        pdf_url = f"https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber={document_id}" if document_id else None
+
+        doi = None
+        for meta_name in ("citation_doi", "dc.Identifier"):
+            meta = soup.find("meta", attrs={"name": meta_name})
+            if meta and meta.get("content"):
+                doi = self.abstract_fetcher._clean_text(meta["content"])  # pyright: ignore[reportPrivateUsage]
+                break
+
+        return PaperLookupResult(
+            provider="ieee_page",
+            confidence=self._score_candidate(
+                normalized_title,
+                self._normalize_title(page_title or title),
+                year=year,
+                expected_year=year,
+                venue=venue,
+                expected_venue=venue,
+            ),
+            title=page_title or title,
+            abstract=abstract,
+            url=url,
+            source_page_url=url,
+            pdf_url=pdf_url,
+            venue=venue or "IEEE",
+            year=year,
+            doi=doi,
+            notes=["Metadata extracted from the IEEE Xplore page."],
+        )
+
+    def _extract_acm_page_metadata(
+        self,
+        html: str,
+        *,
+        url: str,
+        title: str,
+        venue: str | None,
+        year: int | None,
+    ) -> PaperLookupResult:
+        soup = BeautifulSoup(html, "html.parser")
+        normalized_title = self._normalize_title(title)
+        page_title = self.abstract_fetcher._clean_text(  # pyright: ignore[reportPrivateUsage]
+            soup.find("h1").get_text(" ", strip=True) if soup.find("h1") else title
+        )
+        abstract = self.abstract_fetcher._extract_abstract(html)  # pyright: ignore[reportPrivateUsage]
+        doi = self._extract_doi_from_acm_url(url)
+        pdf_url = f"https://dl.acm.org/doi/pdf/{doi}" if doi else None
+
+        return PaperLookupResult(
+            provider="acm_page",
+            confidence=self._score_candidate(
+                normalized_title,
+                self._normalize_title(page_title or title),
+                year=year,
+                expected_year=year,
+                venue=venue,
+                expected_venue=venue,
+            ),
+            title=page_title or title,
+            abstract=abstract,
+            url=url,
+            source_page_url=url,
+            pdf_url=pdf_url,
+            venue=venue or "ACM",
+            year=year,
+            doi=doi,
+            notes=["Metadata extracted from the ACM Digital Library page."],
+        )
+
     def _pick_semantic_scholar_match(
         self,
         results: list[dict],
@@ -479,6 +603,20 @@ class PaperLookupService:
         if not value:
             return None
         return value.removeprefix("https://doi.org/").strip() or None
+
+    def _extract_ieee_document_id(self, url: str) -> str | None:
+        path = urlparse(url).path.strip("/")
+        if path.startswith("document/"):
+            document_id = path.removeprefix("document/").split("/", 1)[0]
+            return document_id or None
+        return None
+
+    def _extract_doi_from_acm_url(self, url: str) -> str | None:
+        path = urlparse(url).path.strip("/")
+        if path.startswith("doi/"):
+            doi = path.removeprefix("doi/").removeprefix("pdf/")
+            return doi or None
+        return None
 
     def _score_candidate(
         self,
