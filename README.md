@@ -1,13 +1,16 @@
 # Paper Agent
 
-一個以 `FastAPI`、`openai-agents`、`Postgres + pgvector` 為核心的研究助理系統。它會讀取你手動整理的 accepted paper Markdown 清單，自動抓取摘要並建立向量索引，讓聊天 Agent 可以優先從本地 paper 資料庫找資料，必要時再用網路搜尋補充背景。
+一個以 `FastAPI`、`openai-agents`、`Postgres + pgvector` 為核心的研究助理系統。它會讀取你手動整理的 accepted paper Markdown 清單，自動抓取摘要並建立向量索引，讓聊天 Agent 可以優先從本地 paper 資料庫找資料，必要時再透過 paper-specific lookup 與 PDF 轉 Markdown 工具補充內容。
 
 ## 功能
 
 - 匯入 accepted paper Markdown 清單
 - 自動抓取論文摘要並建立 embedding
 - 用 `pgvector` 做 paper retrieval
-- 用 `openai-agents` 建立可呼叫本地 paper tools 與 `WebSearchTool()` 的聊天 Agent
+- 用 `openai-agents` 建立可呼叫本地 paper tools 的聊天 Agent
+- 支援 `Semantic Scholar -> OpenAlex` 的 paper-specific web lookup fallback
+- 支援從 `NDSS`、`USENIX`、`IEEE`、`ACM`、`arXiv` 頁面或 URL 推導 paper metadata / PDF
+- 支援將 PDF 轉成 Markdown，讓 Agent 分段閱讀論文內容
 - 極簡 React + shadcn/ui 風格前端
 
 ## 專案結構
@@ -49,6 +52,7 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5433/paper_agent
 ```bash
 OPENAI_MODEL=gpt-4.1-mini
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+SEMANTIC_SCHOLAR_API_KEY=
 FRONTEND_ORIGIN=http://localhost:5173
 VITE_API_BASE_URL=/api
 ```
@@ -146,6 +150,37 @@ heading 中若包含 venue 與年份，系統會自動保留。
 
 `POST /papers/import-markdown` 現在會先建立匯入 job 並立即回傳，前端再輪詢 job 狀態，不再同步等待整批 paper 完成。
 
+## Agent 工具能力
+
+目前聊天 Agent 除了本地 paper retrieval 外，還有以下 paper-specific 工具：
+
+- `search_papers`
+  - 以向量檢索查本地資料庫中的相關 papers
+- `get_paper_details`
+  - 取得已檢索 papers 的詳細資料
+- `find_paper_abstract`
+  - 先查本地資料庫，必要時再用外部 paper lookup 補 abstract
+- `lookup_paper_on_web`
+  - 針對特定 paper 查找 paper page、PDF、slides、video、DOI 等 metadata
+- `convert_pdf_url_to_markdown`
+  - 直接將 PDF URL 轉成 Markdown
+- `convert_paper_pdf_to_markdown`
+  - 先解析特定 paper 的 PDF URL，再把 PDF 轉成 Markdown
+
+其中 `lookup_paper_on_web` 的目前支援來源如下：
+
+- domain / venue extractor
+  - `NDSS`
+  - `USENIX`
+  - `IEEE`
+  - `ACM`
+  - `arXiv`
+- metadata fallback
+  - `Semantic Scholar`
+  - `OpenAlex`
+
+`convert_pdf_url_to_markdown` 與 `convert_paper_pdf_to_markdown` 會回傳 chunked Markdown，Agent 可用 `start_char` / `max_chars` 逐段閱讀 PDF，避免一次把整份論文塞進 context。
+
 ## 測試
 
 ```bash
@@ -156,11 +191,15 @@ cd frontend && pnpm build
 
 ## TODO
 
-- `paper-specific web lookup`
-  - 先不要做通用 web search engine integration
-  - 優先做一個專門針對 paper 的外部查找能力
-  - 目標是讓 agent 在本地資料不足時，可以依 `title + venue + year` 去查 paper page、OpenAlex、Semantic Scholar、arXiv、OpenReview 等來源
-  - 這會比先接一般搜尋引擎更符合目前 `Paper Agent` 的核心用途
+- `browser-use` 獨立工具
+  - 作為 paper lookup 失敗時的最後 fallback
+  - 也可讓 Agent 執行一般瀏覽器互動型任務
+- 擴充更多 paper page extractor
+  - 優先考慮 `OpenReview`
+  - 視需要補強更多 conference proceedings / publisher 網站
+- 將外部 paper lookup 結果回寫到本地資料庫
+  - 例如 DOI、PDF URL、abstract、slides、video 等欄位
+  - 避免重複查詢外部來源
 
 ## 初始化資料庫
 
