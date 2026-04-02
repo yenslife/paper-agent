@@ -16,6 +16,15 @@ type Props = {
 };
 
 export function ChatPanel({ messages, prompt, isChatLoading, error, onPromptChange, onSubmit, onAbort }: Props) {
+  function handlePromptKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      const form = event.currentTarget.form;
+      if (!form) return;
+      form.requestSubmit();
+    }
+  }
+
   return (
     <Card className="flex min-h-[720px] flex-col lg:h-[720px] lg:min-h-0">
       <CardHeader>
@@ -93,6 +102,7 @@ export function ChatPanel({ messages, prompt, isChatLoading, error, onPromptChan
             placeholder="例如：幫我找 2024-2025 跟 agent security 相關的論文，先從本地資料庫找，不夠再補最新背景。"
             value={prompt}
             onChange={(event) => onPromptChange(event.target.value)}
+            onKeyDown={handlePromptKeyDown}
           />
           <div className="flex gap-3">
             <Button className="flex-1" type="submit" disabled={isChatLoading}>
