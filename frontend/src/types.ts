@@ -3,6 +3,7 @@ export type ChatMessage = {
   content: string;
   citations?: Citation[];
   sources?: SourceSummary[];
+  tool_traces?: ToolTrace[];
 };
 
 export type Citation = {
@@ -19,11 +20,18 @@ export type SourceSummary = {
   description: string;
 };
 
+export type ToolTrace = {
+  tool_name: string;
+  status: "ok" | "not_found" | "error" | "unavailable";
+  summary: string;
+};
+
 export type ChatResponse = {
   session_id: string;
   answer: string;
   citations: Citation[];
   sources: SourceSummary[];
+  tool_traces: ToolTrace[];
 };
 
 export type ImportSummary = {

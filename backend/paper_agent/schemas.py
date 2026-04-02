@@ -130,11 +130,18 @@ class SourceSummary(BaseModel):
     description: str
 
 
+class ToolTrace(BaseModel):
+    tool_name: str
+    status: Literal["ok", "not_found", "error", "unavailable"]
+    summary: str
+
+
 class ChatResponse(BaseModel):
     session_id: str
     answer: str
     citations: list[Citation]
     sources: list[SourceSummary]
+    tool_traces: list[ToolTrace] = Field(default_factory=list)
 
 
 class RetrievedPaper(BaseModel):

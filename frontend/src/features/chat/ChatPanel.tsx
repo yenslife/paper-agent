@@ -41,50 +41,7 @@ export function ChatPanel({ messages, prompt, isChatLoading, error, onPromptChan
             <EmptyState />
           ) : (
             messages.map((message, index) => (
-              <article
-                key={`${message.role}-${index}`}
-                className={[
-                  "rounded-3xl p-4",
-                  message.role === "user"
-                    ? "ml-auto max-w-[85%] bg-[var(--primary)] text-[var(--primary-foreground)]"
-                    : "mr-auto max-w-[90%] bg-[var(--muted)] text-[var(--foreground)]",
-                ].join(" ")}
-              >
-                <p className="whitespace-pre-wrap text-sm leading-7">{message.content}</p>
-
-                {message.citations && message.citations.length > 0 ? (
-                  <div className="mt-4 space-y-2 border-t border-black/5 pt-4">
-                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--muted-foreground)]">
-                      <Search className="h-3.5 w-3.5" />
-                      Citations
-                    </div>
-                    {message.citations.map((citation) => (
-                      <a
-                        key={`${citation.source_type}-${citation.url ?? citation.source_page_url ?? citation.title}`}
-                        className="block rounded-2xl border border-black/5 bg-white/70 px-4 py-3 text-sm no-underline transition hover:-translate-y-0.5 hover:shadow-sm"
-                        href={citation.url ?? citation.source_page_url ?? "#"}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <div className="font-medium text-[var(--foreground)]">{citation.title}</div>
-                        <div className="mt-1 flex flex-wrap gap-2 text-xs text-[var(--muted-foreground)]">
-                          <Badge>{citation.source_type === "local_paper_db" ? "Local paper DB" : "Web search"}</Badge>
-                          {citation.venue ? <span>{citation.venue}</span> : null}
-                          {citation.year ? <span>{citation.year}</span> : null}
-                        </div>
-                      </a>
-                    ))}
-                  </div>
-                ) : null}
-
-                {message.sources && message.sources.length > 0 ? (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {message.sources.map((source) => (
-                      <Badge key={source.source_type}>{source.description}</Badge>
-                    ))}
-                  </div>
-                ) : null}
-              </article>
+              <ChatMessageBlock key={`${message.role}-${index}`} message={message} />
             ))
           )}
 
@@ -120,6 +77,118 @@ export function ChatPanel({ messages, prompt, isChatLoading, error, onPromptChan
       </CardContent>
     </Card>
   );
+}
+
+function ChatMessageBlock({ message }: { message: ChatMessage }) {
+  if (message.role === "user") {
+    return (
+      <article className="ml-auto max-w-[85%] rounded-3xl bg-[var(--primary)] p-4 text-[var(--primary-foreground)]">
+        <p className="whitespace-pre-wrap text-sm leading-7">{message.content}</p>
+      </article>
+    );
+  }
+
+  return (
+    <div className="mr-auto max-w-[92%] space-y-3">
+      {message.tool_traces && message.tool_traces.length > 0 ? (
+        <details className="rounded-3xl border border-black/5 bg-white/80 p-4">
+          <summary className="cursor-pointer list-none text-sm font-semibold text-[var(--foreground)]">
+            Agent 工具過程 ({message.tool_traces.length})
+          </summary>
+          <div className="mt-3 space-y-2">
+            {message.tool_traces.map((trace, index) => (
+              <article
+                key={`${trace.tool_name}-${index}`}
+                className="max-w-[85%] rounded-2xl border border-black/5 bg-[var(--muted)] px-4 py-3 text-sm text-[var(--foreground)]"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge>{toolLabel(trace.tool_name)}</Badge>
+                  <Badge>{toolStatusLabel(trace.status)}</Badge>
+                </div>
+                <p className="mt-2 whitespace-pre-wrap leading-6 text-[var(--muted-foreground)]">{trace.summary}</p>
+              </article>
+            ))}
+          </div>
+        </details>
+      ) : null}
+
+      <article className="rounded-3xl bg-[var(--muted)] p-4 text-[var(--foreground)]">
+        <p className="whitespace-pre-wrap text-sm leading-7">{message.content}</p>
+
+        {message.citations && message.citations.length > 0 ? (
+          <div className="mt-4 space-y-2 border-t border-black/5 pt-4">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--muted-foreground)]">
+              <Search className="h-3.5 w-3.5" />
+              Citations
+            </div>
+            {message.citations.map((citation) => (
+              <a
+                key={`${citation.source_type}-${citation.url ?? citation.source_page_url ?? citation.title}`}
+                className="block rounded-2xl border border-black/5 bg-white/70 px-4 py-3 text-sm no-underline transition hover:-translate-y-0.5 hover:shadow-sm"
+                href={citation.url ?? citation.source_page_url ?? "#"}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <div className="font-medium text-[var(--foreground)]">{citation.title}</div>
+                <div className="mt-1 flex flex-wrap gap-2 text-xs text-[var(--muted-foreground)]">
+                  <Badge>{citation.source_type === "local_paper_db" ? "Local paper DB" : "Web search"}</Badge>
+                  {citation.venue ? <span>{citation.venue}</span> : null}
+                  {citation.year ? <span>{citation.year}</span> : null}
+                </div>
+              </a>
+            ))}
+          </div>
+        ) : null}
+
+        {message.sources && message.sources.length > 0 ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {message.sources.map((source) => (
+              <Badge key={source.source_type}>{source.description}</Badge>
+            ))}
+          </div>
+        ) : null}
+      </article>
+    </div>
+  );
+}
+
+function toolLabel(toolName: string) {
+  switch (toolName) {
+    case "search_papers":
+      return "搜尋論文";
+    case "get_paper_details":
+      return "讀取細節";
+    case "find_paper_abstract":
+      return "找摘要";
+    case "lookup_paper_on_web":
+      return "查外部資料";
+    case "convert_pdf_url_to_markdown":
+    case "convert_paper_pdf_to_markdown":
+      return "讀 PDF";
+    case "browser_browse_task":
+      return "瀏覽器";
+    case "import_markdown_papers":
+      return "匯入 papers";
+    case "web_search":
+      return "Web search";
+    default:
+      return toolName;
+  }
+}
+
+function toolStatusLabel(status: string) {
+  switch (status) {
+    case "ok":
+      return "完成";
+    case "not_found":
+      return "未找到";
+    case "error":
+      return "失敗";
+    case "unavailable":
+      return "不可用";
+    default:
+      return status;
+  }
 }
 
 function EmptyState() {

@@ -179,7 +179,7 @@ export default function App() {
         }),
       });
       if (!response.ok) {
-        throw new Error("聊天請求失敗。");
+        throw new Error(response.status === 504 ? "聊天請求逾時。若 Agent 正在使用瀏覽器工具，請稍後再試。" : "聊天請求失敗。");
       }
       const payload: ChatResponse = await response.json();
       setChatSessionId(payload.session_id);
@@ -190,6 +190,7 @@ export default function App() {
           content: payload.answer,
           citations: payload.citations,
           sources: payload.sources,
+          tool_traces: payload.tool_traces,
         },
       ]);
     } catch (caughtError) {

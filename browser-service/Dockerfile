@@ -1,0 +1,56 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_LINK_MODE=copy \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    PATH="/root/.local/bin:${PATH}"
+
+WORKDIR /app
+
+COPY --from=ghcr.io/astral-sh/uv:0.8.22 /uv /uvx /bin/
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    fonts-liberation \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libc6 \
+    libcairo2 \
+    libcups2 \
+    libdbus-1-3 \
+    libdrm2 \
+    libexpat1 \
+    libfontconfig1 \
+    libgbm1 \
+    libgcc-s1 \
+    libglib2.0-0 \
+    libgtk-3-0 \
+    libnspr4 \
+    libnss3 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libstdc++6 \
+    libx11-6 \
+    libx11-xcb1 \
+    libxcb1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxrandr2 \
+    wget \
+    xdg-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY browser-service/pyproject.toml browser-service/uv.lock browser-service/README.md ./
+COPY browser-service/src /app/src
+RUN uv sync --frozen --no-dev
+RUN uv run python -m playwright install chromium
+
+COPY browser-service /app
+
+EXPOSE 8001
+
+CMD ["uv", "run", "uvicorn", "browser_service.main:app", "--host", "0.0.0.0", "--port", "8001"]

@@ -16,6 +16,7 @@
 ## 專案結構
 
 - `backend/`: FastAPI backend、測試與 Python 專案設定
+- `browser-service/`: 獨立的 browser automation service，專門跑 `browser-use`
 - `frontend/`: React frontend 與 Vite/Tailwind 設定
 - `docs/`: 系統設計與功能整理
 
@@ -45,6 +46,7 @@ cp .env.example .env
 ```bash
 OPENAI_API_KEY=...
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5433/paper_agent
+BROWSER_SERVICE_URL=http://localhost:8001
 ```
 
 可選設定：
@@ -53,6 +55,10 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5433/paper_agent
 OPENAI_MODEL=gpt-4.1-mini
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 SEMANTIC_SCHOLAR_API_KEY=
+BROWSER_USE_MODEL=gpt-4.1-mini
+BROWSER_USE_HEADLESS=true
+BROWSER_USE_MAX_STEPS=12
+BROWSER_USE_EXECUTABLE_PATH=
 FRONTEND_ORIGIN=http://localhost:5173
 VITE_API_BASE_URL=/api
 ```
@@ -64,9 +70,11 @@ VITE_API_BASE_URL=/api
 - `postgres`: 使用 `pgvector/pgvector:pg16`，提供 paper agent 的向量資料庫
 - `adminer`: 提供資料庫瀏覽介面
 - `backend`: FastAPI API server
+- `browser-service`: 獨立的 browser automation API，供 backend 轉呼叫
 - `frontend`: 以 `nginx` 提供建置後的 React 前端
 - PostgreSQL 會在第一次建立 volume 時，自動套用 `docker/postgres/init/*.sql`，建立 extension、enum、tables 與 indexes
 - compose 模式下前端會透過 `nginx` 將 `/api/*` 代理到 backend，不需要瀏覽器直接跨來源打 `localhost:8000`
+- backend image 會在建置時安裝 `browser-use` 所需的 Chromium，讓 `browser_browse_task` 可在 Docker 內執行
 
 完整啟動前後端與資料庫：
 
@@ -78,6 +86,7 @@ docker compose up -d
 
 - Frontend: `http://localhost:5173`
 - Backend API: `http://localhost:8000`
+- Browser Service API: `http://localhost:8001`
 - Adminer: `http://localhost:8080`
 
 停止：
@@ -90,6 +99,12 @@ docker compose down
 
 ```bash
 docker compose down -v
+```
+
+若你剛更新了 backend image 中的 browser 相關依賴，請記得重建：
+
+```bash
+docker compose up -d --build backend
 ```
 
 Adminer 連線資訊：
@@ -110,10 +125,10 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5433/paper_agent
 
 ## 本機開發模式
 
-若你想保留 hot reload，可以只用 compose 跑資料庫，再本機分別跑 backend/frontend：
+若你想保留 hot reload，可以只用 compose 跑資料庫與 browser-service，再本機分別跑 backend/frontend：
 
 ```bash
-docker compose up -d postgres adminer
+docker compose up -d postgres adminer browser-service
 cd backend && uv run uvicorn paper_agent.main:app --reload
 cd frontend && pnpm dev
 ```
@@ -181,6 +196,12 @@ heading 中若包含 venue 與年份，系統會自動保留。
 
 `convert_pdf_url_to_markdown` 與 `convert_paper_pdf_to_markdown` 會回傳 chunked Markdown，Agent 可用 `start_char` / `max_chars` 逐段閱讀 PDF，避免一次把整份論文塞進 context。
 
+另外也提供獨立的瀏覽器工具：
+
+- `browser_browse_task`
+  - 讓 Agent 在 page-specific extractor 與 paper lookup 都不足時，轉呼叫 `browser-service`
+  - 真正的 `browser-use` 與 Chromium runtime 被隔離在 `browser-service`，避免主 backend 的 OpenAI 依賴衝突
+
 ## 測試
 
 ```bash
@@ -192,8 +213,8 @@ cd frontend && pnpm build
 ## TODO
 
 - `browser-use` 獨立工具
-  - 作為 paper lookup 失敗時的最後 fallback
-  - 也可讓 Agent 執行一般瀏覽器互動型任務
+  - 已拆成獨立 `browser-service`
+  - 後續可再補更細的任務模板與權限控制
 - 擴充更多 paper page extractor
   - 優先考慮 `OpenReview`
   - 視需要補強更多 conference proceedings / publisher 網站

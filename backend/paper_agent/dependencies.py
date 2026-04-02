@@ -1,4 +1,5 @@
 from paper_agent.services.abstract_fetcher import AbstractFetcher
+from paper_agent.services.browser_use_service import BrowserUseService
 from paper_agent.services.chat import ChatService
 from paper_agent.services.embeddings import EmbeddingService
 from paper_agent.services.ingestion import IngestionService
@@ -11,7 +12,14 @@ embedding_service = EmbeddingService()
 abstract_fetcher = AbstractFetcher()
 paper_lookup_service = PaperLookupService(abstract_fetcher)
 pdf_markdown_service = PdfMarkdownService(paper_lookup_service)
+browser_use_service = BrowserUseService()
 retrieval_service = RetrievalService(embedding_service)
 markdown_parser = MarkdownParser()
 ingestion_service = IngestionService(abstract_fetcher, embedding_service, markdown_parser=markdown_parser)
-chat_service = ChatService(retrieval_service, ingestion_service, paper_lookup_service, pdf_markdown_service)
+chat_service = ChatService(
+    retrieval_service,
+    ingestion_service,
+    paper_lookup_service,
+    pdf_markdown_service,
+    browser_use_service,
+)

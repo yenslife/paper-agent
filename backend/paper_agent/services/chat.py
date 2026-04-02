@@ -11,8 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from paper_agent.config import get_settings
 from paper_agent.db import engine
 from paper_agent.models import IngestStatus, Paper, PaperEmbedding
-from paper_agent.schemas import ChatMessage, ChatResponse, Citation, SourceSummary
+from paper_agent.schemas import ChatMessage, ChatResponse, Citation, SourceSummary, ToolTrace
 from paper_agent.services.ingestion import IngestionService
+from paper_agent.services.browser_use_service import BrowserUseService
 from paper_agent.services.paper_lookup import PaperLookupService
 from paper_agent.services.pdf_markdown import PdfMarkdownService
 from paper_agent.services.retrieval import RetrievalService
@@ -39,7 +40,9 @@ class AgentContext:
     ingestion_service: IngestionService
     paper_lookup_service: PaperLookupService
     pdf_markdown_service: PdfMarkdownService
+    browser_use_service: BrowserUseService
     local_citations: dict[str, Citation] = field(default_factory=dict)
+    tool_traces: list[ToolTrace] = field(default_factory=list)
 
 
 def _paper_to_citation(paper: Paper) -> Citation:
@@ -60,11 +63,13 @@ class ChatService:
         ingestion_service: IngestionService,
         paper_lookup_service: PaperLookupService,
         pdf_markdown_service: PdfMarkdownService,
+        browser_use_service: BrowserUseService,
     ) -> None:
         self.retrieval_service = retrieval_service
         self.ingestion_service = ingestion_service
         self.paper_lookup_service = paper_lookup_service
         self.pdf_markdown_service = pdf_markdown_service
+        self.browser_use_service = browser_use_service
         self.settings = get_settings()
 
     async def run_chat(
@@ -81,6 +86,7 @@ class ChatService:
             ingestion_service=self.ingestion_service,
             paper_lookup_service=self.paper_lookup_service,
             pdf_markdown_service=self.pdf_markdown_service,
+            browser_use_service=self.browser_use_service,
         )
         agent = self._build_agent()
         input_text = self._format_conversation_input(message, history, has_persistent_session=session_id is not None)
@@ -113,6 +119,22 @@ class ChatService:
             answer=final_output.answer,
             citations=citations,
             sources=sources,
+            tool_traces=context.tool_traces,
+        )
+
+    @staticmethod
+    def _append_tool_trace(
+        ctx: RunContextWrapper[AgentContext],
+        tool_name: str,
+        status: str,
+        summary: str,
+    ) -> None:
+        ctx.context.tool_traces.append(
+            ToolTrace(
+                tool_name=tool_name,
+                status=status,
+                summary=summary,
+            )
         )
 
     def _build_agent(self) -> Agent[AgentContext]:
@@ -142,6 +164,12 @@ class ChatService:
                     year=paper.year,
                     source_type="local_paper_db",
                 )
+            self._append_tool_trace(
+                ctx,
+                "search_papers",
+                "ok",
+                f"在本地資料庫搜尋「{query}」{f'，venue={venue}' if venue else ''}{f'，year={year}' if year else ''}，找到 {len(papers)} 篇結果。",
+            )
             return json.dumps([paper.model_dump() for paper in papers], ensure_ascii=False)
 
         @function_tool
@@ -167,6 +195,12 @@ class ChatService:
                 }
                 for paper in papers
             ]
+            self._append_tool_trace(
+                ctx,
+                "get_paper_details",
+                "ok",
+                f"讀取 {len(papers)} 篇已檢索論文的詳細資料。",
+            )
             return json.dumps(payload, ensure_ascii=False)
 
         @function_tool
@@ -189,6 +223,12 @@ class ChatService:
                 best_local = local_matches[0]
                 ctx.context.local_citations[best_local.id] = _paper_to_citation(best_local)
                 if best_local.abstract:
+                    self._append_tool_trace(
+                        ctx,
+                        "find_paper_abstract",
+                        "ok",
+                        f"在本地資料庫找到「{best_local.title}」的摘要。",
+                    )
                     return json.dumps(
                         {
                             "status": "found_local",
@@ -247,6 +287,16 @@ class ChatService:
                     await ctx.context.session.refresh(best_local)
                     ctx.context.local_citations[best_local.id] = _paper_to_citation(best_local)
                     status = "enriched_local" if best_local.abstract else "metadata_only_local"
+                    self._append_tool_trace(
+                        ctx,
+                        "find_paper_abstract",
+                        "ok" if best_local.abstract else "not_found",
+                        (
+                            f"本地找到「{best_local.title}」，並用外部來源補齊摘要。"
+                            if best_local.abstract
+                            else f"本地找到「{best_local.title}」，但外部來源只補到 metadata，沒有摘要。"
+                        ),
+                    )
                     return json.dumps(
                         {
                             "status": status,
@@ -277,6 +327,12 @@ class ChatService:
             )
             if lookup:
                 if not lookup.abstract:
+                    self._append_tool_trace(
+                        ctx,
+                        "find_paper_abstract",
+                        "not_found",
+                        f"外部來源找到「{lookup.title or title}」的 metadata，但沒有可用摘要。",
+                    )
                     return json.dumps(
                         {
                             "status": "metadata_only",
@@ -297,6 +353,12 @@ class ChatService:
                         },
                         ensure_ascii=False,
                     )
+                self._append_tool_trace(
+                    ctx,
+                    "find_paper_abstract",
+                    "ok",
+                    f"透過 {lookup.provider} 找到「{lookup.title or title}」的摘要。",
+                )
                 return json.dumps(
                     {
                         "status": "found_external",
@@ -345,6 +407,12 @@ class ChatService:
                 year=year,
             )
             if not lookup:
+                self._append_tool_trace(
+                    ctx,
+                    "lookup_paper_on_web",
+                    "not_found",
+                    f"沒有為「{title}」找到可信的外部 paper metadata。",
+                )
                 return json.dumps(
                     {
                         "status": "not_found",
@@ -365,6 +433,13 @@ class ChatService:
                     source_type="web_search",
                 )
 
+            self._append_tool_trace(
+                ctx,
+                "lookup_paper_on_web",
+                "ok",
+                f"透過 {lookup.provider} 找到「{lookup.title or title}」的外部 metadata。"
+                + (f" 已解析 PDF。" if lookup.pdf_url else ""),
+            )
             return json.dumps(
                 {
                     "status": "found",
@@ -386,6 +461,12 @@ class ChatService:
                 pdf_url,
                 start_char=start_char,
                 max_chars=max_chars or self.settings.pdf_markdown_chunk_chars,
+            )
+            self._append_tool_trace(
+                ctx,
+                "convert_pdf_url_to_markdown",
+                "ok",
+                f"將 PDF 轉成 Markdown，讀取字元區間 {chunk.start_char}-{chunk.end_char} / {chunk.total_chars}。",
             )
             return json.dumps(
                 {
@@ -418,6 +499,12 @@ class ChatService:
                 max_chars=max_chars or self.settings.pdf_markdown_chunk_chars,
             )
             if not chunk:
+                self._append_tool_trace(
+                    ctx,
+                    "convert_paper_pdf_to_markdown",
+                    "not_found",
+                    f"無法為「{title}」解析出 PDF URL。",
+                )
                 return json.dumps(
                     {
                         "status": "not_found",
@@ -435,6 +522,12 @@ class ChatService:
                 year=year,
                 source_type="web_search",
             )
+            self._append_tool_trace(
+                ctx,
+                "convert_paper_pdf_to_markdown",
+                "ok",
+                f"為「{title}」解析 PDF 並轉成 Markdown，讀取字元區間 {chunk.start_char}-{chunk.end_char} / {chunk.total_chars}。",
+            )
             return json.dumps(
                 {
                     "status": "ok",
@@ -442,6 +535,38 @@ class ChatService:
                 },
                 ensure_ascii=False,
             )
+
+        @function_tool
+        async def browser_browse_task(
+            ctx: RunContextWrapper[AgentContext],
+            task: str,
+            start_url: str | None = None,
+            max_steps: int | None = None,
+        ) -> str:
+            """Use a real browser to complete a browsing task. Use this only when page-specific extractors and paper lookup are insufficient, or when the website requires real browser interaction."""
+
+            result = await ctx.context.browser_use_service.browse_task(
+                task=task,
+                start_url=start_url,
+                max_steps=max_steps,
+            )
+            normalized_status = result.status.lower()
+            status = "ok"
+            if normalized_status in {"error", "failed"}:
+                status = "error"
+            elif normalized_status in {"not_found", "unavailable"}:
+                status = "not_found"
+            self._append_tool_trace(
+                ctx,
+                "browser_browse_task",
+                status,
+                (
+                    f"用瀏覽器工具執行任務，共 {result.steps} 步，造訪 {len(result.urls)} 個 URL。"
+                    if status == "ok"
+                    else f"瀏覽器工具執行失敗：{'; '.join(result.errors) if result.errors else '未知錯誤'}"
+                ),
+            )
+            return json.dumps(result.to_dict(), ensure_ascii=False)
 
         @function_tool
         async def import_markdown_papers(
@@ -456,12 +581,24 @@ class ChatService:
                 content=markdown_content,
                 source_name=source_name,
             )
+            self._append_tool_trace(
+                ctx,
+                "import_markdown_papers",
+                "ok",
+                f"建立匯入工作，解析 {result.summary.parsed_count} 篇，已匯入 {result.summary.imported_count} 篇。",
+            )
             return result.summary.model_dump_json()
 
         @function_tool
-        async def web_search(query: str) -> str:
+        async def web_search(ctx: RunContextWrapper[AgentContext], query: str) -> str:
             """Placeholder web search tool. It is currently unavailable and should not be treated as a real web result."""
 
+            self._append_tool_trace(
+                ctx,  # type: ignore[name-defined]
+                "web_search",
+                "unavailable",
+                f"外部 web search 尚未配置，無法直接搜尋「{query}」。",
+            )
             return json.dumps(
                 {
                     "status": "unavailable",
@@ -482,8 +619,9 @@ Rules:
 1a. If the user asks for the abstract of a specific paper, use `find_paper_abstract`.
 1b. If the user needs a specific paper's PDF, slide, video, DOI, or paper page, use `lookup_paper_on_web`.
 1c. If the user needs to read the PDF content itself, use `convert_paper_pdf_to_markdown` or `convert_pdf_url_to_markdown`. Read it in chunks if needed.
+1d. If the site is dynamic, blocked, or the paper-specific lookup tools are insufficient, use `browser_browse_task` as a fallback browser automation tool.
 2. The `web_search` tool is currently a dummy placeholder. If you call it, explain that external web search is not configured yet.
-3. Never claim you read a paper unless it came from `get_paper_details`.
+3. Never claim you read a paper unless it came from `get_paper_details`, `convert_paper_pdf_to_markdown`, `convert_pdf_url_to_markdown`, or `browser_browse_task`.
 4. Citations must only include URLs that came from trusted tools.
 5. Distinguish local paper citations from web search citations with the `source_type` field.
 6. If the database is missing enough evidence, say so directly.
@@ -502,6 +640,7 @@ Rules:
                 lookup_paper_on_web,
                 convert_pdf_url_to_markdown,
                 convert_paper_pdf_to_markdown,
+                browser_browse_task,
                 import_markdown_papers,
                 web_search,
             ],
