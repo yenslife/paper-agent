@@ -1,5 +1,8 @@
+import asyncio
+import contextlib
 import json
 import uuid
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 
 from agents import Agent, ModelSettings, RunContextWrapper, Runner, function_tool, trace
@@ -43,6 +46,7 @@ class AgentContext:
     browser_use_service: BrowserUseService
     local_citations: dict[str, Citation] = field(default_factory=dict)
     tool_traces: list[ToolTrace] = field(default_factory=list)
+    event_emitter: Callable[[dict[str, object]], Awaitable[None]] | None = None
 
 
 def _paper_to_citation(paper: Paper) -> Citation:
@@ -122,6 +126,90 @@ class ChatService:
             tool_traces=context.tool_traces,
         )
 
+    async def stream_chat(
+        self,
+        session: AsyncSession,
+        message: str,
+        history: list[ChatMessage],
+        session_id: str | None = None,
+    ) -> AsyncIterator[dict[str, object]]:
+        resolved_session_id = session_id or str(uuid.uuid4())
+        queue: asyncio.Queue[dict[str, object]] = asyncio.Queue()
+
+        async def emit(event: dict[str, object]) -> None:
+            await queue.put(event)
+
+        context = AgentContext(
+            session=session,
+            retrieval_service=self.retrieval_service,
+            ingestion_service=self.ingestion_service,
+            paper_lookup_service=self.paper_lookup_service,
+            pdf_markdown_service=self.pdf_markdown_service,
+            browser_use_service=self.browser_use_service,
+            event_emitter=emit,
+        )
+        agent = self._build_agent()
+        input_text = self._format_conversation_input(message, history, has_persistent_session=session_id is not None)
+        agent_session = SQLAlchemySession(
+            resolved_session_id,
+            engine=engine,
+            create_tables=True,
+        )
+
+        async def run_agent() -> None:
+            try:
+                await emit({"type": "session_started", "session_id": resolved_session_id})
+                with trace(
+                    "paper-agent-chat",
+                    group_id=resolved_session_id,
+                    metadata={
+                        "session_id": resolved_session_id,
+                        "history_count": str(len(history)),
+                    },
+                ):
+                    result = await Runner.run(
+                        agent,
+                        input_text,
+                        context=context,
+                        session=agent_session,
+                    )
+                final_output = self._coerce_output(result.final_output)
+                citations = self._merge_citations(final_output.citations, context.local_citations)
+                sources = self._build_sources(citations)
+                await emit(
+                    {
+                        "type": "final_answer",
+                        "session_id": resolved_session_id,
+                        "answer": final_output.answer,
+                        "citations": [citation.model_dump() for citation in citations],
+                        "sources": [source.model_dump() for source in sources],
+                        "tool_traces": [trace_item.model_dump() for trace_item in context.tool_traces],
+                    }
+                )
+            except Exception as error:
+                await emit(
+                    {
+                        "type": "error",
+                        "message": str(error),
+                    }
+                )
+            finally:
+                await emit({"type": "completed"})
+
+        task = asyncio.create_task(run_agent())
+
+        try:
+            while True:
+                event = await queue.get()
+                yield event
+                if event.get("type") == "completed":
+                    break
+        finally:
+            if not task.done():
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+
     @staticmethod
     def _append_tool_trace(
         ctx: RunContextWrapper[AgentContext],
@@ -137,6 +225,47 @@ class ChatService:
             )
         )
 
+    @staticmethod
+    async def _emit_event(
+        ctx: RunContextWrapper[AgentContext],
+        event: dict[str, object],
+    ) -> None:
+        if ctx.context.event_emitter:
+            await ctx.context.event_emitter(event)
+
+    async def _emit_tool_started(
+        self,
+        ctx: RunContextWrapper[AgentContext],
+        tool_name: str,
+        summary: str,
+    ) -> None:
+        await self._emit_event(
+            ctx,
+            {
+                "type": "tool_started",
+                "tool_name": tool_name,
+                "summary": summary,
+            },
+        )
+
+    async def _record_tool_trace(
+        self,
+        ctx: RunContextWrapper[AgentContext],
+        tool_name: str,
+        status: str,
+        summary: str,
+    ) -> None:
+        self._append_tool_trace(ctx, tool_name, status, summary)
+        await self._emit_event(
+            ctx,
+            {
+                "type": "tool_finished" if status == "ok" else "tool_failed",
+                "tool_name": tool_name,
+                "status": status,
+                "summary": summary,
+            },
+        )
+
     def _build_agent(self) -> Agent[AgentContext]:
         @function_tool
         async def search_papers(
@@ -148,6 +277,11 @@ class ChatService:
         ) -> str:
             """Search the local paper database by semantic similarity. Use this first for paper-related questions."""
 
+            await self._emit_tool_started(
+                ctx,
+                "search_papers",
+                f"在本地資料庫搜尋「{query}」{f'，venue={venue}' if venue else ''}{f'，year={year}' if year else ''}。",
+            )
             papers = await ctx.context.retrieval_service.search_papers(
                 ctx.context.session,
                 query=query,
@@ -164,7 +298,7 @@ class ChatService:
                     year=paper.year,
                     source_type="local_paper_db",
                 )
-            self._append_tool_trace(
+            await self._record_tool_trace(
                 ctx,
                 "search_papers",
                 "ok",
@@ -179,6 +313,11 @@ class ChatService:
         ) -> str:
             """Fetch detailed records for papers that were previously retrieved."""
 
+            await self._emit_tool_started(
+                ctx,
+                "get_paper_details",
+                f"讀取 {len(paper_ids)} 篇論文的詳細資料。",
+            )
             papers = await ctx.context.retrieval_service.get_papers_by_ids(ctx.context.session, paper_ids)
             for paper in papers:
                 ctx.context.local_citations[paper.id] = _paper_to_citation(paper)
@@ -195,7 +334,7 @@ class ChatService:
                 }
                 for paper in papers
             ]
-            self._append_tool_trace(
+            await self._record_tool_trace(
                 ctx,
                 "get_paper_details",
                 "ok",
@@ -214,6 +353,11 @@ class ChatService:
         ) -> str:
             """Find the abstract for a specific paper title. Check the local database first, then do an external metadata lookup if needed."""
 
+            await self._emit_tool_started(
+                ctx,
+                "find_paper_abstract",
+                f"為「{title}」查找摘要。",
+            )
             local_matches = await ctx.context.retrieval_service.find_papers_by_title(
                 ctx.context.session,
                 title=title,
@@ -223,7 +367,7 @@ class ChatService:
                 best_local = local_matches[0]
                 ctx.context.local_citations[best_local.id] = _paper_to_citation(best_local)
                 if best_local.abstract:
-                    self._append_tool_trace(
+                    await self._record_tool_trace(
                         ctx,
                         "find_paper_abstract",
                         "ok",
@@ -287,7 +431,7 @@ class ChatService:
                     await ctx.context.session.refresh(best_local)
                     ctx.context.local_citations[best_local.id] = _paper_to_citation(best_local)
                     status = "enriched_local" if best_local.abstract else "metadata_only_local"
-                    self._append_tool_trace(
+                    await self._record_tool_trace(
                         ctx,
                         "find_paper_abstract",
                         "ok" if best_local.abstract else "not_found",
@@ -327,7 +471,7 @@ class ChatService:
             )
             if lookup:
                 if not lookup.abstract:
-                    self._append_tool_trace(
+                    await self._record_tool_trace(
                         ctx,
                         "find_paper_abstract",
                         "not_found",
@@ -353,7 +497,7 @@ class ChatService:
                         },
                         ensure_ascii=False,
                     )
-                self._append_tool_trace(
+                await self._record_tool_trace(
                     ctx,
                     "find_paper_abstract",
                     "ok",
@@ -380,6 +524,12 @@ class ChatService:
                     ensure_ascii=False,
                 )
 
+            await self._record_tool_trace(
+                ctx,
+                "find_paper_abstract",
+                "not_found",
+                f"沒有為「{title}」找到摘要。",
+            )
             return json.dumps(
                 {
                     "status": "not_found",
@@ -399,6 +549,11 @@ class ChatService:
         ) -> str:
             """Look up paper metadata on the web. Use this when you need a paper page, PDF, slides, video, DOI, or abstract for a specific paper."""
 
+            await self._emit_tool_started(
+                ctx,
+                "lookup_paper_on_web",
+                f"在外部來源查找「{title}」的 paper metadata。",
+            )
             lookup = await ctx.context.paper_lookup_service.lookup_paper(
                 title=title,
                 paper_url=paper_url,
@@ -407,7 +562,7 @@ class ChatService:
                 year=year,
             )
             if not lookup:
-                self._append_tool_trace(
+                await self._record_tool_trace(
                     ctx,
                     "lookup_paper_on_web",
                     "not_found",
@@ -433,7 +588,7 @@ class ChatService:
                     source_type="web_search",
                 )
 
-            self._append_tool_trace(
+            await self._record_tool_trace(
                 ctx,
                 "lookup_paper_on_web",
                 "ok",
@@ -457,12 +612,17 @@ class ChatService:
         ) -> str:
             """Convert a PDF URL to markdown and return a chunk. Use this when you need to read PDF content directly."""
 
+            await self._emit_tool_started(
+                ctx,
+                "convert_pdf_url_to_markdown",
+                f"將 PDF 轉成 Markdown：{pdf_url}",
+            )
             chunk = await ctx.context.pdf_markdown_service.convert_pdf_url_to_markdown(
                 pdf_url,
                 start_char=start_char,
                 max_chars=max_chars or self.settings.pdf_markdown_chunk_chars,
             )
-            self._append_tool_trace(
+            await self._record_tool_trace(
                 ctx,
                 "convert_pdf_url_to_markdown",
                 "ok",
@@ -489,6 +649,11 @@ class ChatService:
         ) -> str:
             """Resolve a paper PDF from a paper URL or source page and convert it to markdown. Use this when the user asks to read the PDF content of a specific paper."""
 
+            await self._emit_tool_started(
+                ctx,
+                "convert_paper_pdf_to_markdown",
+                f"為「{title}」解析 PDF 並轉成 Markdown。",
+            )
             chunk = await ctx.context.pdf_markdown_service.convert_paper_url_to_markdown(
                 title=title,
                 paper_url=paper_url,
@@ -499,7 +664,7 @@ class ChatService:
                 max_chars=max_chars or self.settings.pdf_markdown_chunk_chars,
             )
             if not chunk:
-                self._append_tool_trace(
+                await self._record_tool_trace(
                     ctx,
                     "convert_paper_pdf_to_markdown",
                     "not_found",
@@ -522,7 +687,7 @@ class ChatService:
                 year=year,
                 source_type="web_search",
             )
-            self._append_tool_trace(
+            await self._record_tool_trace(
                 ctx,
                 "convert_paper_pdf_to_markdown",
                 "ok",
@@ -545,6 +710,11 @@ class ChatService:
         ) -> str:
             """Use a real browser to complete a browsing task. Use this only when page-specific extractors and paper lookup are insufficient, or when the website requires real browser interaction."""
 
+            await self._emit_tool_started(
+                ctx,
+                "browser_browse_task",
+                f"使用瀏覽器執行任務：{task}",
+            )
             result = await ctx.context.browser_use_service.browse_task(
                 task=task,
                 start_url=start_url,
@@ -556,7 +726,7 @@ class ChatService:
                 status = "error"
             elif normalized_status in {"not_found", "unavailable"}:
                 status = "not_found"
-            self._append_tool_trace(
+            await self._record_tool_trace(
                 ctx,
                 "browser_browse_task",
                 status,
@@ -576,12 +746,17 @@ class ChatService:
         ) -> str:
             """Import a markdown list of papers into the local paper database."""
 
+            await self._emit_tool_started(
+                ctx,
+                "import_markdown_papers",
+                "建立新的 markdown 匯入工作。",
+            )
             result = await ctx.context.ingestion_service.import_markdown(
                 ctx.context.session,
                 content=markdown_content,
                 source_name=source_name,
             )
-            self._append_tool_trace(
+            await self._record_tool_trace(
                 ctx,
                 "import_markdown_papers",
                 "ok",
@@ -593,7 +768,7 @@ class ChatService:
         async def web_search(ctx: RunContextWrapper[AgentContext], query: str) -> str:
             """Placeholder web search tool. It is currently unavailable and should not be treated as a real web result."""
 
-            self._append_tool_trace(
+            await self._record_tool_trace(
                 ctx,  # type: ignore[name-defined]
                 "web_search",
                 "unavailable",

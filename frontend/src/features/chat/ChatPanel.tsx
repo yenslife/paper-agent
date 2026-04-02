@@ -88,30 +88,20 @@ function ChatMessageBlock({ message }: { message: ChatMessage }) {
     );
   }
 
+  if (message.role === "tool") {
+    return (
+      <article className="mr-auto max-w-[85%] rounded-2xl border border-black/5 bg-white/80 px-4 py-3 text-sm text-[var(--foreground)] shadow-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge>{toolLabel(message.tool_name ?? "tool")}</Badge>
+          <Badge>{toolStatusLabel(message.tool_status ?? "running")}</Badge>
+        </div>
+        <p className="mt-2 whitespace-pre-wrap leading-6 text-[var(--muted-foreground)]">{message.content}</p>
+      </article>
+    );
+  }
+
   return (
     <div className="mr-auto max-w-[92%] space-y-3">
-      {message.tool_traces && message.tool_traces.length > 0 ? (
-        <details className="rounded-3xl border border-black/5 bg-white/80 p-4">
-          <summary className="cursor-pointer list-none text-sm font-semibold text-[var(--foreground)]">
-            Agent 工具過程 ({message.tool_traces.length})
-          </summary>
-          <div className="mt-3 space-y-2">
-            {message.tool_traces.map((trace, index) => (
-              <article
-                key={`${trace.tool_name}-${index}`}
-                className="max-w-[85%] rounded-2xl border border-black/5 bg-[var(--muted)] px-4 py-3 text-sm text-[var(--foreground)]"
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge>{toolLabel(trace.tool_name)}</Badge>
-                  <Badge>{toolStatusLabel(trace.status)}</Badge>
-                </div>
-                <p className="mt-2 whitespace-pre-wrap leading-6 text-[var(--muted-foreground)]">{trace.summary}</p>
-              </article>
-            ))}
-          </div>
-        </details>
-      ) : null}
-
       <article className="rounded-3xl bg-[var(--muted)] p-4 text-[var(--foreground)]">
         <p className="whitespace-pre-wrap text-sm leading-7">{message.content}</p>
 
@@ -178,6 +168,8 @@ function toolLabel(toolName: string) {
 
 function toolStatusLabel(status: string) {
   switch (status) {
+    case "running":
+      return "執行中";
     case "ok":
       return "完成";
     case "not_found":

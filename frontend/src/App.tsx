@@ -9,7 +9,7 @@ import { SidebarInset, SidebarProvider, SidebarTrigger } from "./components/ui/s
 import {
   BatchConferenceBindingResult,
   ChatMessage,
-  ChatResponse,
+  ChatStreamEvent,
   ConferenceListResponse,
   ConferenceRecord,
   FetchMarkdownResponse,
@@ -59,10 +59,12 @@ export default function App() {
 
   const conversationHistory = useMemo(
     () =>
-      messages.map((message) => ({
-        role: message.role,
-        content: message.content,
-      })),
+      messages
+        .filter((message) => message.role !== "tool")
+        .map((message) => ({
+          role: message.role,
+          content: message.content,
+        })),
     [messages],
   );
 
@@ -168,7 +170,7 @@ export default function App() {
     chatAbortControllerRef.current = abortController;
 
     try {
-      const response = await fetch(buildApiUrl("/chat"), {
+      const response = await fetch(buildApiUrl("/chat/stream"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: abortController.signal,
@@ -181,18 +183,79 @@ export default function App() {
       if (!response.ok) {
         throw new Error(response.status === 504 ? "聊天請求逾時。若 Agent 正在使用瀏覽器工具，請稍後再試。" : "聊天請求失敗。");
       }
-      const payload: ChatResponse = await response.json();
-      setChatSessionId(payload.session_id);
-      setMessages((current) => [
-        ...current,
-        {
-          role: "assistant",
-          content: payload.answer,
-          citations: payload.citations,
-          sources: payload.sources,
-          tool_traces: payload.tool_traces,
-        },
-      ]);
+      if (!response.body) {
+        throw new Error("聊天串流沒有回傳內容。");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const blocks = buffer.split("\n\n");
+        buffer = blocks.pop() ?? "";
+
+        for (const block of blocks) {
+          const payload = parseSseEvent(block);
+          if (!payload) continue;
+          const streamEvent = payload as ChatStreamEvent;
+
+          if (streamEvent.type === "session_started") {
+            setChatSessionId(streamEvent.session_id);
+            continue;
+          }
+
+          if (streamEvent.type === "tool_started") {
+            setMessages((current) => [
+              ...current,
+              {
+                role: "tool",
+                content: streamEvent.summary,
+                tool_name: streamEvent.tool_name,
+                tool_status: "running",
+                tool_phase: "started",
+              },
+            ]);
+            continue;
+          }
+
+          if (streamEvent.type === "tool_finished" || streamEvent.type === "tool_failed") {
+            setMessages((current) => [
+              ...current,
+              {
+                role: "tool",
+                content: streamEvent.summary,
+                tool_name: streamEvent.tool_name,
+                tool_status: streamEvent.status,
+                tool_phase: streamEvent.type === "tool_finished" ? "finished" : "failed",
+              },
+            ]);
+            continue;
+          }
+
+          if (streamEvent.type === "final_answer") {
+            setChatSessionId(streamEvent.session_id);
+            setMessages((current) => [
+              ...current,
+              {
+                role: "assistant",
+                content: streamEvent.answer,
+                citations: streamEvent.citations,
+                sources: streamEvent.sources,
+                tool_traces: streamEvent.tool_traces,
+              },
+            ]);
+            continue;
+          }
+
+          if (streamEvent.type === "error") {
+            throw new Error(streamEvent.message || "聊天串流失敗。");
+          }
+        }
+      }
     } catch (caughtError) {
       if (caughtError instanceof DOMException && caughtError.name === "AbortError") {
         return;
@@ -211,6 +274,23 @@ export default function App() {
     chatAbortControllerRef.current = null;
     setIsChatLoading(false);
     setError(null);
+  }
+
+  function parseSseEvent(block: string): Record<string, unknown> | null {
+    const dataLines = block
+      .split("\n")
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trim());
+
+    if (dataLines.length === 0) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(dataLines.join("\n")) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
   }
 
   async function handleImportSubmit(event: FormEvent<HTMLFormElement>) {

@@ -1,9 +1,12 @@
 export type ChatMessage = {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "tool";
   content: string;
   citations?: Citation[];
   sources?: SourceSummary[];
   tool_traces?: ToolTrace[];
+  tool_name?: string;
+  tool_status?: "running" | "ok" | "not_found" | "error" | "unavailable";
+  tool_phase?: "started" | "finished" | "failed";
 };
 
 export type Citation = {
@@ -33,6 +36,15 @@ export type ChatResponse = {
   sources: SourceSummary[];
   tool_traces: ToolTrace[];
 };
+
+export type ChatStreamEvent =
+  | { type: "session_started"; session_id: string }
+  | { type: "tool_started"; tool_name: string; summary: string }
+  | { type: "tool_finished"; tool_name: string; status: "ok" | "not_found" | "error" | "unavailable"; summary: string }
+  | { type: "tool_failed"; tool_name: string; status: "ok" | "not_found" | "error" | "unavailable"; summary: string }
+  | { type: "final_answer"; session_id: string; answer: string; citations: Citation[]; sources: SourceSummary[]; tool_traces: ToolTrace[] }
+  | { type: "error"; message: string }
+  | { type: "completed" };
 
 export type ImportSummary = {
   id: string;
