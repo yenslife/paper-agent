@@ -151,13 +151,21 @@ export function ChatPanel({
                 <Plus className="size-7" />
               </button>
 
-              <textarea
-                className="max-h-40 min-h-8 flex-1 resize-none bg-transparent py-0 text-base leading-6 text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]"
-                placeholder="想問就問"
-                value={prompt}
-                onChange={(event) => onPromptChange(event.target.value)}
-                onKeyDown={handlePromptKeyDown}
-              />
+              <div className="relative grid min-h-14 flex-1 overflow-hidden px-1.5">
+                {!prompt ? (
+                  <div className="pointer-events-none col-start-1 row-start-1 self-center px-0 py-0 text-base leading-6 text-[var(--muted-foreground)]">
+                    想問就問
+                  </div>
+                ) : null}
+                <textarea
+                  rows={1}
+                  className="col-start-1 row-start-1 max-h-40 min-h-8 flex-1 resize-none self-center bg-transparent py-0 text-base leading-6 text-[var(--foreground)] outline-none placeholder:text-transparent"
+                  placeholder="想問就問"
+                  value={prompt}
+                  onChange={(event) => onPromptChange(event.target.value)}
+                  onKeyDown={handlePromptKeyDown}
+                />
+              </div>
 
               <div className="flex items-center gap-3">
                 <Button
