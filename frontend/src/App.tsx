@@ -215,6 +215,15 @@ export default function App() {
               {
                 role: "tool",
                 content: streamEvent.summary,
+                trace_id: streamEvent.trace_id,
+                tool_trace: {
+                  trace_id: streamEvent.trace_id,
+                  tool_name: streamEvent.tool_name,
+                  status: "running",
+                  summary: streamEvent.summary,
+                  started_at: streamEvent.started_at,
+                  details: streamEvent.details ?? null,
+                },
                 tool_name: streamEvent.tool_name,
                 tool_status: "running",
                 tool_phase: "started",
@@ -229,6 +238,8 @@ export default function App() {
               {
                 role: "tool",
                 content: streamEvent.summary,
+                trace_id: streamEvent.trace_id,
+                tool_trace: streamEvent.tool_trace,
                 tool_name: streamEvent.tool_name,
                 tool_status: streamEvent.status,
                 tool_phase: streamEvent.type === "tool_finished" ? "finished" : "failed",

@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -131,9 +131,14 @@ class SourceSummary(BaseModel):
 
 
 class ToolTrace(BaseModel):
+    trace_id: str
     tool_name: str
     status: Literal["ok", "not_found", "error", "unavailable"]
     summary: str
+    started_at: str
+    ended_at: str | None = None
+    duration_ms: int | None = None
+    details: dict[str, Any] | None = None
 
 
 class ChatResponse(BaseModel):

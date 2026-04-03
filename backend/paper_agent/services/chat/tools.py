@@ -19,6 +19,18 @@ from .types import AgentContext, paper_to_citation
 
 
 def build_chat_tools(service: "ChatService") -> list[object]:
+    def tool_details(
+        *,
+        arguments: dict[str, object] | None = None,
+        result: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {}
+        if arguments is not None:
+            payload["arguments"] = arguments
+        if result is not None:
+            payload["result"] = result
+        return payload
+
     @function_tool
     async def inspect_database_schema(
         ctx: RunContextWrapper[AgentContext],
@@ -29,6 +41,7 @@ def build_chat_tools(service: "ChatService") -> list[object]:
             ctx,
             "inspect_database_schema",
             "查看資料庫 schema 與可查詢的表。",
+            details=tool_details(arguments={}),
         )
         try:
             schema = await ctx.context.database_query_service.describe_schema(ctx.context.session)
@@ -51,6 +64,14 @@ def build_chat_tools(service: "ChatService") -> list[object]:
             "inspect_database_schema",
             "ok",
             f"查看資料庫 schema，共 {len(schema.get('tables', []))} 個資料表。",
+            details=tool_details(
+                arguments={},
+                result={
+                    "status": "ok",
+                    "table_count": len(schema.get("tables", [])),
+                    "tables": [table.get("name") for table in schema.get("tables", [])[:10]],
+                },
+            ),
         )
         return json.dumps(
             {
@@ -71,6 +92,7 @@ def build_chat_tools(service: "ChatService") -> list[object]:
             ctx,
             "query_database_sql",
             f"執行唯讀 SQL：{sql}",
+            details=tool_details(arguments={"sql": sql}),
         )
         try:
             result = await ctx.context.database_query_service.execute_readonly_sql(ctx.context.session, sql)
@@ -80,6 +102,10 @@ def build_chat_tools(service: "ChatService") -> list[object]:
                 "query_database_sql",
                 "error",
                 f"SQL 驗證失敗：{error}",
+                details=tool_details(
+                    arguments={"sql": sql},
+                    result={"status": "invalid_sql", "message": str(error)},
+                ),
             )
             return json.dumps(
                 {
@@ -94,6 +120,15 @@ def build_chat_tools(service: "ChatService") -> list[object]:
             "query_database_sql",
             "ok",
             f"執行唯讀 SQL，取得 {result.row_count} 筆資料。",
+            details=tool_details(
+                arguments={"sql": sql},
+                result={
+                    "status": "ok",
+                    "row_count": result.row_count,
+                    "columns": result.columns,
+                    "rows": result.rows[:5],
+                },
+            ),
         )
         return json.dumps(
             {
@@ -117,6 +152,14 @@ def build_chat_tools(service: "ChatService") -> list[object]:
             ctx,
             "search_papers",
             f"在本地資料庫搜尋「{query}」{f'，venue={venue}' if venue else ''}{f'，year={year}' if year else ''}。",
+            details=tool_details(
+                arguments={
+                    "query": query,
+                    "venue": venue,
+                    "year": year,
+                    "top_k": top_k,
+                }
+            ),
         )
         papers = await ctx.context.retrieval_service.search_papers(
             ctx.context.session,
@@ -139,6 +182,19 @@ def build_chat_tools(service: "ChatService") -> list[object]:
             "search_papers",
             "ok",
             f"在本地資料庫搜尋「{query}」{f'，venue={venue}' if venue else ''}{f'，year={year}' if year else ''}，找到 {len(papers)} 篇結果。",
+            details=tool_details(
+                arguments={
+                    "query": query,
+                    "venue": venue,
+                    "year": year,
+                    "top_k": top_k,
+                },
+                result={
+                    "status": "ok",
+                    "result_count": len(papers),
+                    "items": [paper.model_dump() for paper in papers[:5]],
+                },
+            ),
         )
         return json.dumps([paper.model_dump() for paper in papers], ensure_ascii=False)
 
@@ -153,6 +209,7 @@ def build_chat_tools(service: "ChatService") -> list[object]:
             ctx,
             "get_paper_details",
             f"讀取 {len(paper_ids)} 篇論文的詳細資料。",
+            details=tool_details(arguments={"paper_ids": paper_ids}),
         )
         papers = await ctx.context.retrieval_service.get_papers_by_ids(ctx.context.session, paper_ids)
         for paper in papers:
@@ -175,6 +232,14 @@ def build_chat_tools(service: "ChatService") -> list[object]:
             "get_paper_details",
             "ok",
             f"讀取 {len(papers)} 篇已檢索論文的詳細資料。",
+            details=tool_details(
+                arguments={"paper_ids": paper_ids},
+                result={
+                    "status": "ok",
+                    "paper_count": len(papers),
+                    "items": payload,
+                },
+            ),
         )
         return json.dumps(payload, ensure_ascii=False)
 
@@ -193,6 +258,15 @@ def build_chat_tools(service: "ChatService") -> list[object]:
             ctx,
             "find_paper_abstract",
             f"為「{title}」查找摘要。",
+            details=tool_details(
+                arguments={
+                    "title": title,
+                    "paper_url": paper_url,
+                    "source_page_url": source_page_url,
+                    "venue": venue,
+                    "year": year,
+                }
+            ),
         )
         local_matches = await ctx.context.retrieval_service.find_papers_by_title(
             ctx.context.session,
@@ -208,6 +282,24 @@ def build_chat_tools(service: "ChatService") -> list[object]:
                     "find_paper_abstract",
                     "ok",
                     f"在本地資料庫找到「{best_local.title}」的摘要。",
+                    details=tool_details(
+                        arguments={
+                            "title": title,
+                            "paper_url": paper_url,
+                            "source_page_url": source_page_url,
+                            "venue": venue,
+                            "year": year,
+                        },
+                        result={
+                            "status": "found_local",
+                            "source": "local_paper_db",
+                            "paper": {
+                                "id": best_local.id,
+                                "title": best_local.title,
+                                "abstract_chars": len(best_local.abstract),
+                            },
+                        },
+                    ),
                 )
                 return json.dumps(
                     {
@@ -276,6 +368,28 @@ def build_chat_tools(service: "ChatService") -> list[object]:
                         if best_local.abstract
                         else f"本地找到「{best_local.title}」，但外部來源只補到 metadata，沒有摘要。"
                     ),
+                    details=tool_details(
+                        arguments={
+                            "title": title,
+                            "paper_url": paper_url,
+                            "source_page_url": source_page_url,
+                            "venue": venue,
+                            "year": year,
+                        },
+                        result={
+                            "status": status,
+                            "source": "local_paper_db",
+                            "provider": lookup.provider,
+                            "paper": {
+                                "id": best_local.id,
+                                "title": best_local.title,
+                                "has_abstract": bool(best_local.abstract),
+                                "pdf_url": lookup.pdf_url,
+                                "slide_url": lookup.slide_url,
+                                "video_url": lookup.video_url,
+                            },
+                        },
+                    ),
                 )
                 return json.dumps(
                     {
@@ -312,6 +426,25 @@ def build_chat_tools(service: "ChatService") -> list[object]:
                     "find_paper_abstract",
                     "not_found",
                     f"外部來源找到「{lookup.title or title}」的 metadata，但沒有可用摘要。",
+                    details=tool_details(
+                        arguments={
+                            "title": title,
+                            "paper_url": paper_url,
+                            "source_page_url": source_page_url,
+                            "venue": venue,
+                            "year": year,
+                        },
+                        result={
+                            "status": "metadata_only",
+                            "source": "web_search",
+                            "provider": lookup.provider,
+                            "paper": {
+                                "title": lookup.title or title,
+                                "url": lookup.url,
+                                "pdf_url": lookup.pdf_url,
+                            },
+                        },
+                    ),
                 )
                 return json.dumps(
                     {
@@ -338,6 +471,26 @@ def build_chat_tools(service: "ChatService") -> list[object]:
                 "find_paper_abstract",
                 "ok",
                 f"透過 {lookup.provider} 找到「{lookup.title or title}」的摘要。",
+                details=tool_details(
+                    arguments={
+                        "title": title,
+                        "paper_url": paper_url,
+                        "source_page_url": source_page_url,
+                        "venue": venue,
+                        "year": year,
+                    },
+                    result={
+                        "status": "found_external",
+                        "source": "web_search",
+                        "provider": lookup.provider,
+                        "paper": {
+                            "title": lookup.title or title,
+                            "abstract_chars": len(lookup.abstract or ""),
+                            "url": lookup.url,
+                            "pdf_url": lookup.pdf_url,
+                        },
+                    },
+                ),
             )
             return json.dumps(
                 {
@@ -365,6 +518,16 @@ def build_chat_tools(service: "ChatService") -> list[object]:
             "find_paper_abstract",
             "not_found",
             f"沒有為「{title}」找到摘要。",
+            details=tool_details(
+                arguments={
+                    "title": title,
+                    "paper_url": paper_url,
+                    "source_page_url": source_page_url,
+                    "venue": venue,
+                    "year": year,
+                },
+                result={"status": "not_found"},
+            ),
         )
         return json.dumps(
             {
@@ -389,6 +552,15 @@ def build_chat_tools(service: "ChatService") -> list[object]:
             ctx,
             "lookup_paper_on_web",
             f"在外部來源查找「{title}」的 paper metadata。",
+            details=tool_details(
+                arguments={
+                    "title": title,
+                    "paper_url": paper_url,
+                    "source_page_url": source_page_url,
+                    "venue": venue,
+                    "year": year,
+                }
+            ),
         )
         lookup = await ctx.context.paper_lookup_service.lookup_paper(
             title=title,
@@ -403,6 +575,16 @@ def build_chat_tools(service: "ChatService") -> list[object]:
                 "lookup_paper_on_web",
                 "not_found",
                 f"沒有為「{title}」找到可信的外部 paper metadata。",
+                details=tool_details(
+                    arguments={
+                        "title": title,
+                        "paper_url": paper_url,
+                        "source_page_url": source_page_url,
+                        "venue": venue,
+                        "year": year,
+                    },
+                    result={"status": "not_found"},
+                ),
             )
             return json.dumps(
                 {
@@ -430,6 +612,19 @@ def build_chat_tools(service: "ChatService") -> list[object]:
             "ok",
             f"透過 {lookup.provider} 找到「{lookup.title or title}」的外部 metadata。"
             + (" 已解析 PDF。" if lookup.pdf_url else ""),
+            details=tool_details(
+                arguments={
+                    "title": title,
+                    "paper_url": paper_url,
+                    "source_page_url": source_page_url,
+                    "venue": venue,
+                    "year": year,
+                },
+                result={
+                    "status": "found",
+                    "paper": lookup.to_dict(),
+                },
+            ),
         )
         return json.dumps(
             {
@@ -452,6 +647,13 @@ def build_chat_tools(service: "ChatService") -> list[object]:
             ctx,
             "convert_pdf_url_to_markdown",
             f"將 PDF 轉成 Markdown：{pdf_url}",
+            details=tool_details(
+                arguments={
+                    "pdf_url": pdf_url,
+                    "start_char": start_char,
+                    "max_chars": max_chars or service.settings.pdf_markdown_chunk_chars,
+                }
+            ),
         )
         chunk = await ctx.context.pdf_markdown_service.convert_pdf_url_to_markdown(
             pdf_url,
@@ -463,6 +665,17 @@ def build_chat_tools(service: "ChatService") -> list[object]:
             "convert_pdf_url_to_markdown",
             "ok",
             f"將 PDF 轉成 Markdown，讀取字元區間 {chunk.start_char}-{chunk.end_char} / {chunk.total_chars}。",
+            details=tool_details(
+                arguments={
+                    "pdf_url": pdf_url,
+                    "start_char": start_char,
+                    "max_chars": max_chars or service.settings.pdf_markdown_chunk_chars,
+                },
+                result={
+                    "status": "ok",
+                    "chunk": chunk.to_dict(),
+                },
+            ),
         )
         return json.dumps(
             {
@@ -489,6 +702,17 @@ def build_chat_tools(service: "ChatService") -> list[object]:
             ctx,
             "convert_paper_pdf_to_markdown",
             f"為「{title}」解析 PDF 並轉成 Markdown。",
+            details=tool_details(
+                arguments={
+                    "title": title,
+                    "paper_url": paper_url,
+                    "source_page_url": source_page_url,
+                    "venue": venue,
+                    "year": year,
+                    "start_char": start_char,
+                    "max_chars": max_chars or service.settings.pdf_markdown_chunk_chars,
+                }
+            ),
         )
         chunk = await ctx.context.pdf_markdown_service.convert_paper_url_to_markdown(
             title=title,
@@ -505,6 +729,18 @@ def build_chat_tools(service: "ChatService") -> list[object]:
                 "convert_paper_pdf_to_markdown",
                 "not_found",
                 f"無法為「{title}」解析出 PDF URL。",
+                details=tool_details(
+                    arguments={
+                        "title": title,
+                        "paper_url": paper_url,
+                        "source_page_url": source_page_url,
+                        "venue": venue,
+                        "year": year,
+                        "start_char": start_char,
+                        "max_chars": max_chars or service.settings.pdf_markdown_chunk_chars,
+                    },
+                    result={"status": "not_found"},
+                ),
             )
             return json.dumps(
                 {
@@ -528,6 +764,21 @@ def build_chat_tools(service: "ChatService") -> list[object]:
             "convert_paper_pdf_to_markdown",
             "ok",
             f"為「{title}」解析 PDF 並轉成 Markdown，讀取字元區間 {chunk.start_char}-{chunk.end_char} / {chunk.total_chars}。",
+            details=tool_details(
+                arguments={
+                    "title": title,
+                    "paper_url": paper_url,
+                    "source_page_url": source_page_url,
+                    "venue": venue,
+                    "year": year,
+                    "start_char": start_char,
+                    "max_chars": max_chars or service.settings.pdf_markdown_chunk_chars,
+                },
+                result={
+                    "status": "ok",
+                    "chunk": chunk.to_dict(),
+                },
+            ),
         )
         return json.dumps(
             {
@@ -550,6 +801,13 @@ def build_chat_tools(service: "ChatService") -> list[object]:
             ctx,
             "browser_browse_task",
             f"使用瀏覽器執行任務：{task}",
+            details=tool_details(
+                arguments={
+                    "task": task,
+                    "start_url": start_url,
+                    "max_steps": max_steps,
+                }
+            ),
         )
         result = await ctx.context.browser_use_service.browse_task(
             task=task,
@@ -571,6 +829,14 @@ def build_chat_tools(service: "ChatService") -> list[object]:
                 if status == "ok"
                 else f"瀏覽器工具執行失敗：{'; '.join(result.errors) if result.errors else '未知錯誤'}"
             ),
+            details=tool_details(
+                arguments={
+                    "task": task,
+                    "start_url": start_url,
+                    "max_steps": max_steps,
+                },
+                result=result.to_dict(),
+            ),
         )
         return json.dumps(result.to_dict(), ensure_ascii=False)
 
@@ -586,6 +852,12 @@ def build_chat_tools(service: "ChatService") -> list[object]:
             ctx,
             "import_markdown_papers",
             "建立新的 markdown 匯入工作。",
+            details=tool_details(
+                arguments={
+                    "source_name": source_name,
+                    "content_chars": len(markdown_content),
+                }
+            ),
         )
         result = await ctx.context.ingestion_service.import_markdown(
             ctx.context.session,
@@ -597,6 +869,13 @@ def build_chat_tools(service: "ChatService") -> list[object]:
             "import_markdown_papers",
             "ok",
             f"建立匯入工作，解析 {result.summary.parsed_count} 篇，已匯入 {result.summary.imported_count} 篇。",
+            details=tool_details(
+                arguments={
+                    "source_name": source_name,
+                    "content_chars": len(markdown_content),
+                },
+                result=result.summary.model_dump(),
+            ),
         )
         return result.summary.model_dump_json()
 
@@ -612,6 +891,12 @@ def build_chat_tools(service: "ChatService") -> list[object]:
             ctx,
             "web_search",
             f"搜尋外部網頁：「{query}」，最多 {max_results} 筆結果。",
+            details=tool_details(
+                arguments={
+                    "query": query,
+                    "max_results": max_results,
+                }
+            ),
         )
         results = await ctx.context.web_search_service.search(query, max_results)
         if not results:
@@ -620,6 +905,13 @@ def build_chat_tools(service: "ChatService") -> list[object]:
                 "web_search",
                 "not_found",
                 f"外部 web search 沒有為「{query}」找到結果。",
+                details=tool_details(
+                    arguments={
+                        "query": query,
+                        "max_results": max_results,
+                    },
+                    result={"status": "not_found", "results": []},
+                ),
             )
             return json.dumps(
                 {
@@ -646,6 +938,17 @@ def build_chat_tools(service: "ChatService") -> list[object]:
             "web_search",
             "ok",
             f"外部 web search 為「{query}」找到 {len(results)} 筆結果。",
+            details=tool_details(
+                arguments={
+                    "query": query,
+                    "max_results": max_results,
+                },
+                result={
+                    "status": "ok",
+                    "result_count": len(results),
+                    "results": [result.to_dict() for result in results[:5]],
+                },
+            ),
         )
         return json.dumps(
             {

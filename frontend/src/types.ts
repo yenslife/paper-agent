@@ -4,6 +4,8 @@ export type ChatMessage = {
   citations?: Citation[];
   sources?: SourceSummary[];
   tool_traces?: ToolTrace[];
+  tool_trace?: ToolTrace;
+  trace_id?: string;
   tool_name?: string;
   tool_status?: "running" | "ok" | "not_found" | "error" | "unavailable";
   tool_phase?: "started" | "finished" | "failed";
@@ -24,9 +26,14 @@ export type SourceSummary = {
 };
 
 export type ToolTrace = {
+  trace_id: string;
   tool_name: string;
-  status: "ok" | "not_found" | "error" | "unavailable";
+  status: "running" | "ok" | "not_found" | "error" | "unavailable";
   summary: string;
+  started_at: string;
+  ended_at?: string | null;
+  duration_ms?: number | null;
+  details?: Record<string, unknown> | null;
 };
 
 export type ChatResponse = {
@@ -39,9 +46,9 @@ export type ChatResponse = {
 
 export type ChatStreamEvent =
   | { type: "session_started"; session_id: string }
-  | { type: "tool_started"; tool_name: string; summary: string }
-  | { type: "tool_finished"; tool_name: string; status: "ok" | "not_found" | "error" | "unavailable"; summary: string }
-  | { type: "tool_failed"; tool_name: string; status: "ok" | "not_found" | "error" | "unavailable"; summary: string }
+  | { type: "tool_started"; trace_id: string; tool_name: string; summary: string; started_at: string; details?: Record<string, unknown> | null }
+  | { type: "tool_finished"; trace_id: string; tool_name: string; status: "ok" | "not_found" | "error" | "unavailable"; summary: string; tool_trace: ToolTrace }
+  | { type: "tool_failed"; trace_id: string; tool_name: string; status: "ok" | "not_found" | "error" | "unavailable"; summary: string; tool_trace: ToolTrace }
   | { type: "final_answer"; session_id: string; answer: string; citations: Citation[]; sources: SourceSummary[]; tool_traces: ToolTrace[] }
   | { type: "error"; message: string }
   | { type: "completed" };

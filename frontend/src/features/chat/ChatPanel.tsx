@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CircleHelp, Loader2, Plus, Search, Sparkles, Square, X } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleHelp, Loader2, Plus, Search, Sparkles, Square, X } from "lucide-react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -246,8 +246,12 @@ function ChatMessageBlock({
         <div className="flex flex-wrap items-center gap-2">
           <Badge>{toolLabel(message.tool_name ?? "tool")}</Badge>
           <Badge>{toolStatusLabel(message.tool_status ?? "running")}</Badge>
+          {message.tool_trace?.duration_ms != null ? (
+            <span className="text-xs text-[var(--muted-foreground)]">{formatDuration(message.tool_trace.duration_ms)}</span>
+          ) : null}
         </div>
         <p className="mt-2 whitespace-pre-wrap leading-6 text-[var(--muted-foreground)]">{message.content}</p>
+        {message.tool_trace ? <ToolTraceDetails toolTrace={message.tool_trace} /> : null}
       </article>
     );
   }
@@ -292,6 +296,58 @@ function ChatMessageBlock({
   );
 }
 
+function ToolTraceDetails({ toolTrace }: { toolTrace: ChatMessage["tool_trace"] }) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  if (!toolTrace) return null;
+
+  const detailEntries = toolTrace.details ? Object.entries(toolTrace.details) : [];
+  const hasExpandableContent = detailEntries.length > 0 || toolTrace.started_at || toolTrace.ended_at;
+  if (!hasExpandableContent) return null;
+
+  return (
+    <div className="mt-3 rounded-2xl border border-[var(--border)] bg-[var(--muted)]/55">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs text-[var(--muted-foreground)]"
+        onClick={() => setIsOpen((current) => !current)}
+      >
+        <span className="flex items-center gap-2">
+          {isOpen ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+          查看執行細節
+        </span>
+        {toolTrace.duration_ms != null ? <span>{formatDuration(toolTrace.duration_ms)}</span> : null}
+      </button>
+
+      {isOpen ? (
+        <div className="space-y-3 border-t border-[var(--border)] px-3 py-3 text-xs text-[var(--muted-foreground)]">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div>
+              <div className="font-medium text-[var(--foreground)]">Started</div>
+              <div>{formatTimestamp(toolTrace.started_at)}</div>
+            </div>
+            {toolTrace.ended_at ? (
+              <div>
+                <div className="font-medium text-[var(--foreground)]">Ended</div>
+                <div>{formatTimestamp(toolTrace.ended_at)}</div>
+              </div>
+            ) : null}
+          </div>
+
+          {detailEntries.length > 0 ? (
+            <div>
+              <div className="mb-2 font-medium text-[var(--foreground)]">Partial span data</div>
+              <pre className="overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-3 text-[11px] leading-5 text-[var(--foreground)]">
+                {JSON.stringify(toolTrace.details, null, 2)}
+              </pre>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function toolLabel(toolName: string) {
   switch (toolName) {
     case "search_papers":
@@ -331,6 +387,22 @@ function toolStatusLabel(status: string) {
     default:
       return status;
   }
+}
+
+function formatDuration(durationMs: number) {
+  if (durationMs < 1000) return `${durationMs} ms`;
+  return `${(durationMs / 1000).toFixed(2)} s`;
+}
+
+function formatTimestamp(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleTimeString("zh-TW", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
 }
 
 function EmptyState({ onSuggestionSelect }: { onSuggestionSelect: (value: string) => void }) {
