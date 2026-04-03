@@ -204,6 +204,98 @@ cd backend && uv run uvicorn paper_agent.main:app --reload
 docker compose up -d --build
 ```
 
+### 提交前請先自行跑測試
+
+在推上 GitHub 或開 PR 前，建議至少先把 CI 對應的檢查在本機跑過一次：
+
+```bash
+cd backend
+uv sync --frozen --dev
+uv run pytest
+uv run python -m py_compile $(find paper_agent -name '*.py' -print)
+
+cd ../browser-service
+uv sync --frozen
+uv run python -m py_compile $(find src -name '*.py' -print)
+uv run playwright install --with-deps chromium
+uv run python scripts/playwright_smoke.py
+
+cd ../frontend
+pnpm install --frozen-lockfile
+pnpm build
+```
+
+若你想連 `browser-use` 的真實 task 也一起測，可以額外提供 `OPENAI_API_KEY`：
+
+```bash
+cd browser-service
+OPENAI_API_KEY=... uv run python scripts/browser_task_smoke.py
+```
+
+## 用 act 本地跑 GitHub Actions
+
+若你想在 push 前直接本地模擬 GitHub Actions，可以用 [`act`](https://github.com/nektos/act)。
+
+先安裝：
+
+```bash
+brew install act
+```
+
+列出目前 workflow / jobs：
+
+```bash
+act -l
+```
+
+跑整個 `pull_request` 事件：
+
+```bash
+act pull_request
+```
+
+只跑單一 job：
+
+```bash
+act pull_request -j backend
+act pull_request -j browser-service
+act pull_request -j frontend
+```
+
+第一次使用 `act` 時，它會要求你選 runner image。若你想手動指定，可用：
+
+```bash
+act pull_request -P ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-latest
+```
+
+若你是 Apple Silicon（M 系列晶片）機器，建議直接加上：
+
+```bash
+act pull_request --container-architecture linux/amd64
+```
+
+只跑單一 job 也一樣：
+
+```bash
+act pull_request -j backend --container-architecture linux/amd64
+act pull_request -j browser-service --container-architecture linux/amd64
+act pull_request -j frontend --container-architecture linux/amd64
+```
+
+如果要把 secrets 帶進 `act`，建議建立一個本機用的 secret 檔案，例如 `.secrets.act`：
+
+```bash
+OPENAI_API_KEY=your_key_here
+```
+
+然後執行：
+
+```bash
+act pull_request --secret-file .secrets.act
+```
+
+`browser-service` 的真實 browser task smoke test 只有在 `OPENAI_API_KEY` 存在時才會執行；若沒有提供 secret，CI 仍會執行 Playwright 啟動測試與其他基本檢查。
+
 ## Markdown 匯入格式
 
 系統現在會優先使用 LLM 解析 Markdown，再退回規則 parser 當 fallback，所以格式可以比以前自由。不過為了提升解析穩定度，仍然建議每篇 paper 至少清楚出現 `title + url`，而且 `venue/year` 盡量放在 heading 或附近文字中。
