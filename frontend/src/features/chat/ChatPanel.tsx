@@ -36,6 +36,7 @@ export function ChatPanel({
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const latestUserMessageRef = useRef<HTMLElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const previousMessageCountRef = useRef(messages.length);
   const latestUserMessageIndex = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -60,6 +61,17 @@ export function ChatPanel({
     const nextScrollTop = Math.max(0, latestUserMessage.offsetTop - topPadding);
     container.scrollTo({ top: nextScrollTop, behavior: "smooth" });
   }, [messages, latestUserMessageIndex]);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    textarea.style.height = "0px";
+    const maxHeight = 192;
+    const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
+  }, [prompt]);
 
   function handlePromptKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
@@ -141,8 +153,8 @@ export function ChatPanel({
 
       <form className="pointer-events-none absolute inset-x-8 bottom-6 z-20" onSubmit={onSubmit}>
         <div className="pointer-events-auto flex flex-col gap-4">
-          <div className="rounded-[999px] border border-[var(--border)] bg-[var(--card)] px-5 py-4 shadow-[0_18px_40px_rgba(15,23,42,0.12)] dark:shadow-[0_18px_40px_rgba(0,0,0,0.38)]">
-            <div className="flex items-center gap-4">
+          <div className="rounded-[40px] border border-[var(--border)] bg-[var(--card)] px-5 py-4 shadow-[0_18px_40px_rgba(15,23,42,0.12)] dark:shadow-[0_18px_40px_rgba(0,0,0,0.38)]">
+            <div className="flex items-end gap-4">
               <button
                 type="button"
                 className="flex size-12 shrink-0 items-center justify-center rounded-full text-[var(--foreground)] transition hover:bg-[var(--muted)]"
@@ -151,15 +163,16 @@ export function ChatPanel({
                 <Plus className="size-7" />
               </button>
 
-              <div className="relative grid min-h-14 flex-1 overflow-hidden px-1.5">
+              <div className="relative grid min-h-12 flex-1 px-1.5 py-1">
                 {!prompt ? (
                   <div className="pointer-events-none col-start-1 row-start-1 self-center px-0 py-0 text-base leading-6 text-[var(--muted-foreground)]">
                     想問就問
                   </div>
                 ) : null}
                 <textarea
+                  ref={textareaRef}
                   rows={1}
-                  className="col-start-1 row-start-1 max-h-40 min-h-8 flex-1 resize-none self-center bg-transparent py-0 text-base leading-6 text-[var(--foreground)] outline-none placeholder:text-transparent"
+                  className="col-start-1 row-start-1 min-h-8 w-full resize-none self-center bg-transparent py-0 text-base leading-6 text-[var(--foreground)] outline-none placeholder:text-transparent"
                   placeholder="想問就問"
                   value={prompt}
                   onChange={(event) => onPromptChange(event.target.value)}
