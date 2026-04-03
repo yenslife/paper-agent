@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CircleHelp, Loader2, Plus, Search, Sparkles, Square, X } from "lucide-react";
 
 import { Badge } from "../../components/ui/badge";
@@ -34,6 +34,32 @@ export function ChatPanel({
   onAbort,
 }: Props) {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const latestUserMessageRef = useRef<HTMLElement | null>(null);
+  const previousMessageCountRef = useRef(messages.length);
+  const latestUserMessageIndex = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index]?.role === "user") return index;
+    }
+    return -1;
+  }, [messages]);
+
+  useEffect(() => {
+    const messageCountIncreased = messages.length > previousMessageCountRef.current;
+    previousMessageCountRef.current = messages.length;
+
+    if (!messageCountIncreased) return;
+    if (latestUserMessageIndex < 0) return;
+    if (messages[latestUserMessageIndex]?.role !== "user") return;
+
+    const container = scrollContainerRef.current;
+    const latestUserMessage = latestUserMessageRef.current;
+    if (!container || !latestUserMessage) return;
+
+    const topPadding = 24;
+    const nextScrollTop = Math.max(0, latestUserMessage.offsetTop - topPadding);
+    container.scrollTo({ top: nextScrollTop, behavior: "smooth" });
+  }, [messages, latestUserMessageIndex]);
 
   function handlePromptKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
@@ -84,13 +110,21 @@ export function ChatPanel({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(180deg,rgba(255,255,255,0.18),rgba(255,255,255,0.58))] px-8 pb-48 pt-20">
+      <div
+        ref={scrollContainerRef}
+        className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(180deg,rgba(255,255,255,0.18),rgba(255,255,255,0.58))] px-8 pb-48 pt-20"
+      >
         {messages.length === 0 ? (
           <EmptyState onSuggestionSelect={onSuggestionSelect} />
         ) : (
           <div className="flex flex-col gap-4">
             {messages.map((message, index) => (
-              <ChatMessageBlock key={`${message.role}-${index}`} message={message} />
+              <ChatMessageBlock
+                key={`${message.role}-${index}`}
+                message={message}
+                isLatestUserMessage={message.role === "user" && index === latestUserMessageIndex}
+                latestUserMessageRef={latestUserMessageRef}
+              />
             ))}
           </div>
         )}
@@ -161,10 +195,25 @@ export function ChatPanel({
   );
 }
 
-function ChatMessageBlock({ message }: { message: ChatMessage }) {
+function ChatMessageBlock({
+  message,
+  isLatestUserMessage,
+  latestUserMessageRef,
+}: {
+  message: ChatMessage;
+  isLatestUserMessage: boolean;
+  latestUserMessageRef: React.MutableRefObject<HTMLElement | null>;
+}) {
   if (message.role === "user") {
     return (
-      <article className="ml-auto max-w-[80%] rounded-[28px] bg-[var(--primary)] px-5 py-4 text-[var(--primary-foreground)] shadow-sm">
+      <article
+        ref={(element) => {
+          if (isLatestUserMessage) {
+            latestUserMessageRef.current = element;
+          }
+        }}
+        className="ml-auto max-w-[80%] rounded-[28px] bg-[var(--primary)] px-5 py-4 text-[var(--primary-foreground)] shadow-sm"
+      >
         <MarkdownRenderer invert>{message.content}</MarkdownRenderer>
       </article>
     );
