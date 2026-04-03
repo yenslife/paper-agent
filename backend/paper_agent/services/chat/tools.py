@@ -601,15 +601,19 @@ def build_chat_tools(service: "ChatService") -> list[object]:
         return result.summary.model_dump_json()
 
     @function_tool
-    async def web_search(ctx: RunContextWrapper[AgentContext], query: str) -> str:
-        """Search the public web without API keys. Use this for general web context, recent background, or when paper-specific lookup is insufficient."""
+    async def web_search(
+        ctx: RunContextWrapper[AgentContext],
+        query: str,
+        max_results: int = 10,
+    ) -> str:
+        """Search the public web without API keys. Use this for general web context, recent background, or when paper-specific lookup is insufficient. Set max_results to control the number of results (default 10)."""
 
         await emit_tool_started(
             ctx,
             "web_search",
-            f"搜尋外部網頁：「{query}」。",
+            f"搜尋外部網頁：「{query}」，最多 {max_results} 筆結果。",
         )
-        results = await ctx.context.web_search_service.search(query)
+        results = await ctx.context.web_search_service.search(query, max_results)
         if not results:
             await record_tool_trace(
                 ctx,
