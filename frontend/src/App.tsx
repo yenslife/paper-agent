@@ -484,11 +484,11 @@ export default function App() {
               className={[
                 "flex min-w-0 flex-col",
                 currentView === "chat" ? "h-screen overflow-hidden" : "min-h-[calc(100vh-4rem)]",
-                currentView === "chat" ? "" : "px-4 py-4 md:px-8 md:py-8",
+                currentView === "chat" ? "" : "",
               ].join(" ")}
             >
               {error ? (
-                <div className={[currentView === "chat" ? "mx-8 mt-4" : "mb-4", "rounded-xl border border-[var(--border)] bg-[var(--muted)] px-4 py-3 text-sm text-[var(--foreground)]"].join(" ")}>
+                <div className={[currentView === "chat" ? "mx-8 mt-4" : "mx-8 mt-4", "rounded-xl border border-[var(--border)] bg-[var(--muted)] px-4 py-3 text-sm text-[var(--foreground)]"].join(" ")}>
                   {error}
                 </div>
               ) : null}
@@ -509,22 +509,20 @@ export default function App() {
               ) : null}
 
               {currentView === "ingestion" ? (
-                <div className="flex min-h-0 flex-1 w-full">
-                  <div className="mx-auto flex w-full max-w-6xl">
-                    <IngestionPanel
-                      markdown={markdown}
-                      sourceUrlInput={sourceUrlInput}
-                      importSummary={importSummary}
-                      isFetchingMarkdown={isFetchingMarkdown}
-                      isImportLoading={isImportLoading}
-                      isCancellingImport={isCancellingImport}
-                      onSourceUrlChange={setSourceUrlInput}
-                      onMarkdownChange={setMarkdown}
-                      onFetchMarkdown={() => void handleFetchMarkdownFromUrl()}
-                      onImportSubmit={handleImportSubmit}
-                      onCancelImport={() => void handleCancelImport()}
-                    />
-                  </div>
+                <div className="min-h-0 flex-1">
+                  <IngestionPanel
+                    markdown={markdown}
+                    sourceUrlInput={sourceUrlInput}
+                    importSummary={importSummary}
+                    isFetchingMarkdown={isFetchingMarkdown}
+                    isImportLoading={isImportLoading}
+                    isCancellingImport={isCancellingImport}
+                    onSourceUrlChange={setSourceUrlInput}
+                    onMarkdownChange={setMarkdown}
+                    onFetchMarkdown={() => void handleFetchMarkdownFromUrl()}
+                    onImportSubmit={handleImportSubmit}
+                    onCancelImport={() => void handleCancelImport()}
+                  />
                 </div>
               ) : null}
 

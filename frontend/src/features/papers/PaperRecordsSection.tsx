@@ -2,7 +2,6 @@ import { ChevronLeft, ChevronRight, Link2, Loader2, Search, Trash2 } from "lucid
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { BatchConferenceBindingResult, ConferenceRecord, PaperConferenceResolution, PaperRecord } from "../../types";
 
 type Props = {
@@ -42,14 +41,13 @@ export function PaperRecordsSection(props: Props) {
   const visiblePageNumbers = buildVisiblePageNumbers(props.paperPage, props.paperTotalPages);
 
   return (
-    <section>
-      <Card className="overflow-x-hidden">
-        <CardHeader>
-          <Badge className="w-fit">Paper records</Badge>
-          <CardTitle>編輯資料庫內容</CardTitle>
-          <CardDescription>支援只有 title 與 conference source URL 的 paper，並可直接在前端補齊欄位。</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+    <section className="overflow-x-hidden px-8 py-8">
+      <div className="space-y-3">
+        <Badge className="w-fit">Paper records</Badge>
+        <h1 className="text-3xl font-semibold tracking-tight">編輯資料庫內容</h1>
+        <p className="max-w-4xl text-base leading-7 text-[var(--muted-foreground)]">支援只有 title 與 conference source URL 的 paper，並可直接在前端補齊欄位。</p>
+      </div>
+      <div className="mt-6 space-y-4">
           <div className="flex flex-col gap-3 rounded-2xl border border-[var(--border)] bg-white/70 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-sm text-[var(--muted-foreground)]">一鍵把目前 `conference_id` 還是空的 papers 依既有規則補綁到 conference 實體。</div>
             <Button type="button" onClick={props.onBulkBindConferences} disabled={props.isBulkBindingConferences}>
@@ -372,8 +370,7 @@ export function PaperRecordsSection(props: Props) {
               </div>
             ) : null}
           </div>
-        </CardContent>
-      </Card>
+      </div>
     </section>
   );
 }

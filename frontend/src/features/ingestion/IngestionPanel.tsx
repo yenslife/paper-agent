@@ -2,7 +2,6 @@ import { DownloadCloud, Loader2, Square, UploadCloud } from "lucide-react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { ImportSummary } from "../../types";
 
 type Props = {
@@ -36,18 +35,18 @@ export function IngestionPanel({
     !!importSummary && ["pending", "running"].includes(importSummary.status) && !importSummary.cancel_requested;
 
   return (
-    <Card className="flex w-full min-h-[720px] flex-col overflow-hidden lg:h-[720px] lg:min-h-0">
-      <CardHeader>
+    <section className="flex h-full min-h-0 w-full flex-col">
+      <div className="shrink-0 space-y-3 px-8 pt-8">
         <Badge className="w-fit bg-[var(--accent)] text-[var(--accent-foreground)]">Paper ingestion</Badge>
-        <CardTitle className="flex items-center gap-3">
+        <div className="flex items-center gap-3 text-3xl font-semibold tracking-tight">
           <UploadCloud className="h-5 w-5" />
           匯入 accepted papers
-        </CardTitle>
-        <CardDescription>
+        </div>
+        <p className="max-w-4xl text-base leading-7 text-[var(--muted-foreground)]">
           貼上你整理好的 Markdown 清單。系統會先用 LLM 解析 paper，再以規則 parser 當 fallback，接著抓摘要並建立 embedding。
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="min-h-0 flex-1 overflow-y-auto">
+        </p>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-8 pb-8 pt-6">
         <form className="space-y-4" onSubmit={onImportSubmit}>
           <div className="space-y-3 rounded-2xl border border-[var(--border)] bg-white/70 p-4">
             <div className="text-sm text-[var(--muted-foreground)]">
@@ -123,8 +122,8 @@ export function IngestionPanel({
             </div>
           </div>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
 
