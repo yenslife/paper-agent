@@ -1,8 +1,9 @@
-import { Loader2, Search, Sparkles, Square } from "lucide-react";
+import { useState } from "react";
+import { CircleHelp, Loader2, Plus, Search, Sparkles, Square, X } from "lucide-react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { MarkdownRenderer } from "../../components/ui/markdown-renderer";
 import { ChatMessage } from "../../types";
 
 type Props = {
@@ -11,11 +12,29 @@ type Props = {
   isChatLoading: boolean;
   error: string | null;
   onPromptChange: (value: string) => void;
+  onSuggestionSelect: (value: string) => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
   onAbort: () => void;
 };
 
-export function ChatPanel({ messages, prompt, isChatLoading, error, onPromptChange, onSubmit, onAbort }: Props) {
+const promptSuggestions = [
+  "幫我找 2025 跟 prompt injection 相關的 paper，先看本地資料庫。",
+  "比較最近兩年 USENIX Security 和 IEEE S&P 關於 AI agent security 的論文方向。",
+  "幫我找某篇 paper 的 abstract，不夠就去外部 lookup 或讀 PDF。",
+];
+
+export function ChatPanel({
+  messages,
+  prompt,
+  isChatLoading,
+  error,
+  onPromptChange,
+  onSuggestionSelect,
+  onSubmit,
+  onAbort,
+}: Props) {
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+
   function handlePromptKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
       event.preventDefault();
@@ -26,71 +45,134 @@ export function ChatPanel({ messages, prompt, isChatLoading, error, onPromptChan
   }
 
   return (
-    <Card className="flex w-full min-h-[720px] flex-col lg:h-[720px] lg:min-h-0">
-      <CardHeader>
-        <Badge className="w-fit bg-[var(--primary)] text-[var(--primary-foreground)]">Chat agent</Badge>
-        <CardTitle className="flex items-center gap-3">
-          <Sparkles className="h-5 w-5" />
-          與 paper agent 對話
-        </CardTitle>
-        <CardDescription>Agent 會優先查本地 paper 資料庫，資料不足時才使用網路搜尋補充背景。</CardDescription>
-      </CardHeader>
-      <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto rounded-3xl bg-white/60 p-4">
-          {messages.length === 0 ? (
-            <EmptyState />
-          ) : (
-            messages.map((message, index) => (
-              <ChatMessageBlock key={`${message.role}-${index}`} message={message} />
-            ))
-          )}
+    <section className="relative flex h-full w-full flex-1 flex-col overflow-hidden bg-transparent">
+      <div className="pointer-events-none absolute right-8 top-6 z-20">
+        <div className="pointer-events-auto relative">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="rounded-full bg-white/90 shadow-sm"
+            onClick={() => setIsHelpOpen((current) => !current)}
+          >
+            <CircleHelp className="size-4" />
+          </Button>
 
-          {isChatLoading ? (
-            <div className="mr-auto flex max-w-[90%] items-center gap-3 rounded-3xl bg-[var(--muted)] px-4 py-3 text-sm text-[var(--muted-foreground)]">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Agent 正在檢索 papers 與整理答案
+          {isHelpOpen ? (
+            <div className="absolute right-0 top-12 w-80 rounded-3xl border border-black/5 bg-white/95 p-5 text-sm text-[var(--foreground)] shadow-[0_20px_50px_rgba(15,23,42,0.12)] backdrop-blur">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-semibold">與 research agent 對話</div>
+                  <p className="mt-2 leading-6 text-[var(--muted-foreground)]">
+                    以 Shadcn Chatbot Kit 的聊天結構為主，支援即時工具泡泡、論文 citations，與後續的 Markdown 回覆顯示。
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-full p-1 text-[var(--muted-foreground)] transition hover:bg-[var(--muted)]"
+                  onClick={() => setIsHelpOpen(false)}
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+              <div className="mt-4 rounded-2xl border border-black/5 bg-[var(--muted)]/80 px-4 py-3 text-xs text-[var(--muted-foreground)]">
+                <div className="font-medium text-[var(--foreground)]">快捷鍵</div>
+                <div className="mt-1">⌘ + Enter 送出訊息</div>
+              </div>
             </div>
           ) : null}
         </div>
+      </div>
 
-        <form className="space-y-3" onSubmit={onSubmit}>
-          <textarea
-            className="min-h-28 w-full rounded-2xl border border-[var(--border)] bg-white/90 p-4 text-sm outline-none transition focus:border-[var(--primary)]"
-            placeholder="例如：幫我找 2024-2025 跟 agent security 相關的論文，先從本地資料庫找，不夠再補最新背景。"
-            value={prompt}
-            onChange={(event) => onPromptChange(event.target.value)}
-            onKeyDown={handlePromptKeyDown}
-          />
-          <div className="flex gap-3">
-            <Button className="flex-1" type="submit" disabled={isChatLoading}>
-              <Sparkles className="mr-2 h-4 w-4" />
-              發送訊息
-            </Button>
-            <Button className="min-w-32" type="button" variant="outline" disabled={!isChatLoading} onClick={onAbort}>
-              <Square className="mr-2 h-4 w-4" />
-              中斷回覆
-            </Button>
+      <div className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(180deg,rgba(255,255,255,0.18),rgba(255,255,255,0.58))] px-8 pb-48 pt-20">
+        {messages.length === 0 ? (
+          <EmptyState onSuggestionSelect={onSuggestionSelect} />
+        ) : (
+          <div className="flex flex-col gap-4">
+            {messages.map((message, index) => (
+              <ChatMessageBlock key={`${message.role}-${index}`} message={message} />
+            ))}
           </div>
-        </form>
+        )}
 
-        {error ? <p className="rounded-2xl border border-[var(--border)] bg-[var(--muted)] px-4 py-3 text-sm text-[var(--foreground)]">{error}</p> : null}
-      </CardContent>
-    </Card>
+        {isChatLoading ? (
+          <div className="mt-4 flex">
+            <div className="mr-auto flex max-w-[72%] items-center gap-3 rounded-2xl border border-black/5 bg-white/80 px-4 py-3 text-sm text-[var(--muted-foreground)] shadow-sm">
+              <Loader2 className="size-4 animate-spin" />
+              Agent 正在思考，可能會依序使用多個工具
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <form className="pointer-events-none absolute inset-x-8 bottom-6 z-20" onSubmit={onSubmit}>
+        <div className="pointer-events-auto flex flex-col gap-4">
+          <div className="rounded-[999px] border border-black/10 bg-white px-5 py-4 shadow-[0_18px_40px_rgba(15,23,42,0.12)]">
+            <div className="flex items-center gap-4">
+              <button
+                type="button"
+                className="flex size-12 shrink-0 items-center justify-center rounded-full text-[var(--foreground)] transition hover:bg-[var(--muted)]"
+                aria-label="More actions"
+              >
+                <Plus className="size-7" />
+              </button>
+
+              <textarea
+                className="max-h-40 min-h-8 flex-1 resize-none bg-transparent py-0 text-base leading-6 text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]"
+                placeholder="想問就問"
+                value={prompt}
+                onChange={(event) => onPromptChange(event.target.value)}
+                onKeyDown={handlePromptKeyDown}
+              />
+
+              <div className="flex items-center gap-3">
+                <Button
+                  className="size-12 rounded-full"
+                  type="submit"
+                  size="icon"
+                  disabled={isChatLoading || !prompt.trim()}
+                  aria-label="發送訊息"
+                >
+                  <Sparkles className="size-5" />
+                </Button>
+                <Button
+                  className="size-12 rounded-full"
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  disabled={!isChatLoading}
+                  onClick={onAbort}
+                  aria-label="中斷回覆"
+                >
+                  <Square className="size-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {error ? (
+            <p className="rounded-2xl border border-[var(--border)] bg-[var(--muted)] px-4 py-3 text-sm text-[var(--foreground)] shadow-sm">
+              {error}
+            </p>
+          ) : null}
+        </div>
+      </form>
+    </section>
   );
 }
 
 function ChatMessageBlock({ message }: { message: ChatMessage }) {
   if (message.role === "user") {
     return (
-      <article className="ml-auto max-w-[85%] rounded-3xl bg-[var(--primary)] p-4 text-[var(--primary-foreground)]">
-        <p className="whitespace-pre-wrap text-sm leading-7">{message.content}</p>
+      <article className="ml-auto max-w-[80%] rounded-[28px] bg-[var(--primary)] px-5 py-4 text-[var(--primary-foreground)] shadow-sm">
+        <MarkdownRenderer invert>{message.content}</MarkdownRenderer>
       </article>
     );
   }
 
   if (message.role === "tool") {
     return (
-      <article className="mr-auto max-w-[85%] rounded-2xl border border-black/5 bg-white/80 px-4 py-3 text-sm text-[var(--foreground)] shadow-sm">
+      <article className="mr-auto max-w-[68%] rounded-2xl border border-black/5 bg-white/85 px-4 py-3 text-sm text-[var(--foreground)] shadow-sm">
         <div className="flex flex-wrap items-center gap-2">
           <Badge>{toolLabel(message.tool_name ?? "tool")}</Badge>
           <Badge>{toolStatusLabel(message.tool_status ?? "running")}</Badge>
@@ -101,44 +183,42 @@ function ChatMessageBlock({ message }: { message: ChatMessage }) {
   }
 
   return (
-    <div className="mr-auto max-w-[92%] space-y-3">
-      <article className="rounded-3xl bg-[var(--muted)] p-4 text-[var(--foreground)]">
-        <p className="whitespace-pre-wrap text-sm leading-7">{message.content}</p>
+    <article className="mr-auto max-w-[78%] rounded-[28px] border border-black/5 bg-[var(--muted)]/90 px-5 py-4 text-[var(--foreground)] shadow-sm">
+      <MarkdownRenderer>{message.content}</MarkdownRenderer>
 
-        {message.citations && message.citations.length > 0 ? (
-          <div className="mt-4 space-y-2 border-t border-black/5 pt-4">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--muted-foreground)]">
-              <Search className="h-3.5 w-3.5" />
-              Citations
-            </div>
-            {message.citations.map((citation) => (
-              <a
-                key={`${citation.source_type}-${citation.url ?? citation.source_page_url ?? citation.title}`}
-                className="block rounded-2xl border border-black/5 bg-white/70 px-4 py-3 text-sm no-underline transition hover:-translate-y-0.5 hover:shadow-sm"
-                href={citation.url ?? citation.source_page_url ?? "#"}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <div className="font-medium text-[var(--foreground)]">{citation.title}</div>
-                <div className="mt-1 flex flex-wrap gap-2 text-xs text-[var(--muted-foreground)]">
-                  <Badge>{citation.source_type === "local_paper_db" ? "Local paper DB" : "Web search"}</Badge>
-                  {citation.venue ? <span>{citation.venue}</span> : null}
-                  {citation.year ? <span>{citation.year}</span> : null}
-                </div>
-              </a>
-            ))}
+      {message.citations && message.citations.length > 0 ? (
+        <div className="mt-5 space-y-2 border-t border-black/5 pt-4">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--muted-foreground)]">
+            <Search className="size-3.5" />
+            Citations
           </div>
-        ) : null}
+          {message.citations.map((citation) => (
+            <a
+              key={`${citation.source_type}-${citation.url ?? citation.source_page_url ?? citation.title}`}
+              className="block rounded-2xl border border-black/5 bg-white px-4 py-3 text-sm no-underline transition hover:-translate-y-0.5 hover:shadow-sm"
+              href={citation.url ?? citation.source_page_url ?? "#"}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <div className="font-medium text-[var(--foreground)]">{citation.title}</div>
+              <div className="mt-1 flex flex-wrap gap-2 text-xs text-[var(--muted-foreground)]">
+                <Badge>{citation.source_type === "local_paper_db" ? "Local paper DB" : "Web search"}</Badge>
+                {citation.venue ? <span>{citation.venue}</span> : null}
+                {citation.year ? <span>{citation.year}</span> : null}
+              </div>
+            </a>
+          ))}
+        </div>
+      ) : null}
 
-        {message.sources && message.sources.length > 0 ? (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {message.sources.map((source) => (
-              <Badge key={source.source_type}>{source.description}</Badge>
-            ))}
-          </div>
-        ) : null}
-      </article>
-    </div>
+      {message.sources && message.sources.length > 0 ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {message.sources.map((source) => (
+            <Badge key={source.source_type}>{source.description}</Badge>
+          ))}
+        </div>
+      ) : null}
+    </article>
   );
 }
 
@@ -183,15 +263,27 @@ function toolStatusLabel(status: string) {
   }
 }
 
-function EmptyState() {
+function EmptyState({ onSuggestionSelect }: { onSuggestionSelect: (value: string) => void }) {
   return (
-    <div className="flex h-full min-h-64 flex-col items-center justify-center gap-4 rounded-3xl border border-dashed border-[var(--border)] bg-[var(--muted)]/70 px-6 text-center">
-      <Sparkles className="h-8 w-8 text-[var(--primary)]" />
-      <div>
-        <div className="text-lg font-semibold">先匯入 paper 清單，再開始提問</div>
-        <p className="mt-2 text-sm text-[var(--muted-foreground)]">
-          你可以問特定主題、指定 venue/year，或要求 Agent 在本地資料不足時補充外部背景。
+    <div className="flex h-full min-h-[520px] flex-col items-center justify-center gap-8 text-center">
+      <div className="space-y-3">
+        <Badge className="bg-white text-[var(--foreground)] shadow-sm">Chat</Badge>
+        <div className="text-3xl font-semibold tracking-tight">Paper Agent 對話工作台</div>
+        <p className="max-w-2xl text-sm leading-7 text-[var(--muted-foreground)]">
+          你可以直接問論文摘要、比較不同會議趨勢、要求 agent 外部 lookup，或進一步讓它讀 PDF 與使用瀏覽器工具。
         </p>
+      </div>
+      <div className="grid w-full gap-3 md:grid-cols-3">
+        {promptSuggestions.map((suggestion) => (
+          <button
+            key={suggestion}
+            className="rounded-3xl border border-black/5 bg-white/85 p-4 text-left text-sm leading-6 text-[var(--foreground)] shadow-sm transition hover:-translate-y-0.5 hover:border-black/10 hover:shadow-md"
+            type="button"
+            onClick={() => onSuggestionSelect(suggestion)}
+          >
+            {suggestion}
+          </button>
+        ))}
       </div>
     </div>
   );
