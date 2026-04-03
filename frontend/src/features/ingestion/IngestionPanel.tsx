@@ -48,13 +48,13 @@ export function IngestionPanel({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-8 pb-8 pt-6">
         <form className="space-y-4" onSubmit={onImportSubmit}>
-          <div className="space-y-3 rounded-2xl border border-[var(--border)] bg-white/70 p-4">
+          <div className="space-y-3 rounded-2xl border border-[var(--border)] bg-[var(--card)]/70 p-4">
             <div className="text-sm text-[var(--muted-foreground)]">
               貼上 conference accepted paper list URL，系統會先去抓 `https://r.jina.ai/&lt;url&gt;` 的 Markdown，填進下面輸入框。
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
               <input
-                className="min-w-0 flex-1 rounded-2xl border border-[var(--border)] bg-white/90 px-4 py-3 text-sm outline-none transition focus:border-[var(--primary)]"
+                className="min-w-0 flex-1 rounded-2xl border border-[var(--border)] bg-[var(--card)]/90 px-4 py-3 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--primary)]"
                 value={sourceUrlInput}
                 onChange={(event) => onSourceUrlChange(event.target.value)}
                 placeholder="https://www.usenix.org/conference/usenixsecurity24/fall-accepted-papers"
@@ -72,12 +72,12 @@ export function IngestionPanel({
             </div>
           </div>
           <textarea
-            className="min-h-72 w-full rounded-2xl border border-[var(--border)] bg-white/85 p-4 text-sm outline-none transition focus:border-[var(--primary)]"
+            className="min-h-72 w-full rounded-2xl border border-[var(--border)] bg-[var(--card)]/85 p-4 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--primary)]"
             value={markdown}
             onChange={(event) => onMarkdownChange(event.target.value)}
             placeholder={"可以是 heading + 清單，也可以是比較自由的 markdown。\n只要每篇 paper 的 title 與 url 足夠明確，LLM 會先幫你解析。"}
           />
-          <div className="rounded-2xl border border-[var(--border)] bg-white/70 px-4 py-3 text-sm text-[var(--muted-foreground)]">
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)]/70 px-4 py-3 text-sm text-[var(--muted-foreground)]">
             建議仍盡量保留清楚的 paper title、連結，以及 venue/year heading，這樣解析會更穩。
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
@@ -105,7 +105,7 @@ export function IngestionPanel({
               {importSummary.parsed_count > 0 ? <span> · 進度 {importSummary.processed_count}/{importSummary.parsed_count}</span> : null}
             </div>
             {importSummary.stage_message ? (
-              <div className="rounded-2xl border border-[var(--border)] bg-white/70 px-4 py-3 text-sm text-[var(--muted-foreground)]">
+              <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)]/70 px-4 py-3 text-sm text-[var(--muted-foreground)]">
                 <div>
                   階段：<span className="font-semibold text-[var(--foreground)]">{formatImportStage(importSummary.stage)}</span>
                 </div>

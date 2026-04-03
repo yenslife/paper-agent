@@ -1,5 +1,6 @@
-import { Database, MessageSquareText, UploadCloud } from "lucide-react";
+import { Database, LaptopMinimal, MessageSquareText, MoonStar, SunMedium, UploadCloud } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import {
   Sidebar,
   SidebarContent,
@@ -13,6 +14,8 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { ThemePreference, useTheme } from "@/components/theme-provider";
 
 export type AppView = "chat" | "ingestion" | "papers";
 
@@ -52,6 +55,18 @@ export function getViewTitle(view: AppView) {
 }
 
 export function AppSidebar({ currentView, onViewChange }: Props) {
+  const { theme, setTheme } = useTheme();
+
+  const themeOptions: Array<{
+    value: ThemePreference;
+    label: string;
+    icon: typeof LaptopMinimal;
+  }> = [
+    { value: "system", label: "跟隨系統", icon: LaptopMinimal },
+    { value: "light", label: "淺色模式", icon: SunMedium },
+    { value: "dark", label: "深色模式", icon: MoonStar },
+  ];
+
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
       <SidebarHeader className="gap-0 border-b border-sidebar-border px-3 py-4">
@@ -101,8 +116,39 @@ export function AppSidebar({ currentView, onViewChange }: Props) {
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border px-3 py-3">
-        <div className="px-2 text-[11px] uppercase tracking-[0.2em] text-sidebar-foreground/50">
-          Dashboard
+        <div className="flex flex-col gap-3 px-2">
+          <div className="text-[11px] uppercase tracking-[0.2em] text-sidebar-foreground/50">Dashboard</div>
+          <TooltipProvider delayDuration={100}>
+            <div className="flex items-center gap-1 rounded-full border border-sidebar-border bg-sidebar-accent/60 p-1">
+              {themeOptions.map((option) => {
+                const Icon = option.icon;
+                const isActive = theme === option.value;
+
+                return (
+                  <Tooltip key={option.value}>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant={isActive ? "secondary" : "ghost"}
+                        size="icon"
+                        aria-label={option.label}
+                        className={[
+                          "size-9 rounded-full border transition-colors",
+                          isActive
+                            ? "border-sidebar-border bg-[var(--card)] text-[var(--foreground)] shadow-sm"
+                            : "border-transparent bg-transparent text-sidebar-foreground/70 hover:bg-sidebar-accent",
+                        ].join(" ")}
+                        onClick={() => setTheme(option.value)}
+                      >
+                        <Icon className="size-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{option.label}</TooltipContent>
+                  </Tooltip>
+                );
+              })}
+            </div>
+          </TooltipProvider>
         </div>
       </SidebarFooter>
 

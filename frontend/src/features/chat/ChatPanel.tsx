@@ -78,14 +78,14 @@ export function ChatPanel({
             type="button"
             variant="outline"
             size="icon"
-            className="rounded-full bg-white/90 shadow-sm"
+            className="rounded-full bg-[var(--card)] shadow-sm"
             onClick={() => setIsHelpOpen((current) => !current)}
           >
             <CircleHelp className="size-4" />
           </Button>
 
           {isHelpOpen ? (
-            <div className="absolute right-0 top-12 w-80 rounded-3xl border border-black/5 bg-white/95 p-5 text-sm text-[var(--foreground)] shadow-[0_20px_50px_rgba(15,23,42,0.12)] backdrop-blur">
+            <div className="absolute right-0 top-12 w-80 rounded-3xl border border-[var(--border)] bg-[var(--card)] p-5 text-sm text-[var(--foreground)] shadow-[0_20px_50px_rgba(15,23,42,0.12)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.4)]">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="font-semibold">與 research agent 對話</div>
@@ -112,7 +112,7 @@ export function ChatPanel({
 
       <div
         ref={scrollContainerRef}
-        className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(180deg,rgba(255,255,255,0.18),rgba(255,255,255,0.58))] px-8 pb-48 pt-20"
+        className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(180deg,color-mix(in_oklch,var(--background)_82%,white_18%),color-mix(in_oklch,var(--background)_96%,var(--card)_4%))] px-8 pb-48 pt-20 dark:bg-[var(--background)]"
       >
         {messages.length === 0 ? (
           <EmptyState onSuggestionSelect={onSuggestionSelect} />
@@ -131,7 +131,7 @@ export function ChatPanel({
 
         {isChatLoading ? (
           <div className="mt-4 flex">
-            <div className="mr-auto flex max-w-[72%] items-center gap-3 rounded-2xl border border-black/5 bg-white/80 px-4 py-3 text-sm text-[var(--muted-foreground)] shadow-sm">
+            <div className="mr-auto flex max-w-[72%] items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--card)]/80 px-4 py-3 text-sm text-[var(--muted-foreground)] shadow-sm">
               <Loader2 className="size-4 animate-spin" />
               Agent 正在思考，可能會依序使用多個工具
             </div>
@@ -141,7 +141,7 @@ export function ChatPanel({
 
       <form className="pointer-events-none absolute inset-x-8 bottom-6 z-20" onSubmit={onSubmit}>
         <div className="pointer-events-auto flex flex-col gap-4">
-          <div className="rounded-[999px] border border-black/10 bg-white px-5 py-4 shadow-[0_18px_40px_rgba(15,23,42,0.12)]">
+          <div className="rounded-[999px] border border-[var(--border)] bg-[var(--card)] px-5 py-4 shadow-[0_18px_40px_rgba(15,23,42,0.12)] dark:shadow-[0_18px_40px_rgba(0,0,0,0.38)]">
             <div className="flex items-center gap-4">
               <button
                 type="button"
@@ -229,7 +229,7 @@ function ChatMessageBlock({
 
   if (message.role === "tool") {
     return (
-      <article className="mr-auto max-w-[68%] rounded-2xl border border-black/5 bg-white/85 px-4 py-3 text-sm text-[var(--foreground)] shadow-sm">
+      <article className="mr-auto max-w-[68%] rounded-2xl border border-[var(--border)] bg-[var(--card)]/85 px-4 py-3 text-sm text-[var(--foreground)] shadow-sm">
         <div className="flex flex-wrap items-center gap-2">
           <Badge>{toolLabel(message.tool_name ?? "tool")}</Badge>
           <Badge>{toolStatusLabel(message.tool_status ?? "running")}</Badge>
@@ -240,11 +240,11 @@ function ChatMessageBlock({
   }
 
   return (
-    <article className="mr-auto max-w-[78%] rounded-[28px] border border-black/5 bg-[var(--muted)]/90 px-5 py-4 text-[var(--foreground)] shadow-sm">
+    <article className="mr-auto max-w-[78%] rounded-[28px] border border-[var(--border)] bg-[var(--muted)]/90 px-5 py-4 text-[var(--foreground)] shadow-sm">
       <MarkdownRenderer>{message.content}</MarkdownRenderer>
 
       {message.citations && message.citations.length > 0 ? (
-        <div className="mt-5 space-y-2 border-t border-black/5 pt-4">
+        <div className="mt-5 space-y-2 border-t border-[var(--border)] pt-4">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--muted-foreground)]">
             <Search className="size-3.5" />
             Citations
@@ -252,7 +252,7 @@ function ChatMessageBlock({
           {message.citations.map((citation) => (
             <a
               key={`${citation.source_type}-${citation.url ?? citation.source_page_url ?? citation.title}`}
-              className="block rounded-2xl border border-black/5 bg-white px-4 py-3 text-sm no-underline transition hover:-translate-y-0.5 hover:shadow-sm"
+              className="block rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm no-underline transition hover:-translate-y-0.5 hover:shadow-sm"
               href={citation.url ?? citation.source_page_url ?? "#"}
               target="_blank"
               rel="noreferrer"
@@ -324,7 +324,7 @@ function EmptyState({ onSuggestionSelect }: { onSuggestionSelect: (value: string
   return (
     <div className="flex h-full min-h-[520px] flex-col items-center justify-center gap-8 text-center">
       <div className="space-y-3">
-        <Badge className="bg-white text-[var(--foreground)] shadow-sm">Chat</Badge>
+        <Badge className="bg-[var(--card)] text-[var(--foreground)] shadow-sm">Chat</Badge>
         <div className="text-3xl font-semibold tracking-tight">Paper Agent 對話工作台</div>
         <p className="max-w-2xl text-sm leading-7 text-[var(--muted-foreground)]">
           你可以直接問論文摘要、比較不同會議趨勢、要求 agent 外部 lookup，或進一步讓它讀 PDF 與使用瀏覽器工具。
@@ -334,7 +334,7 @@ function EmptyState({ onSuggestionSelect }: { onSuggestionSelect: (value: string
         {promptSuggestions.map((suggestion) => (
           <button
             key={suggestion}
-            className="rounded-3xl border border-black/5 bg-white/85 p-4 text-left text-sm leading-6 text-[var(--foreground)] shadow-sm transition hover:-translate-y-0.5 hover:border-black/10 hover:shadow-md"
+            className="rounded-3xl border border-[var(--border)] bg-[var(--card)]/85 p-4 text-left text-sm leading-6 text-[var(--foreground)] shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
             type="button"
             onClick={() => onSuggestionSelect(suggestion)}
           >

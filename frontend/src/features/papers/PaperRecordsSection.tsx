@@ -48,7 +48,7 @@ export function PaperRecordsSection(props: Props) {
         <p className="max-w-4xl text-base leading-7 text-[var(--muted-foreground)]">支援只有 title 與 conference source URL 的 paper，並可直接在前端補齊欄位。</p>
       </div>
       <div className="mt-6 space-y-4">
-          <div className="flex flex-col gap-3 rounded-2xl border border-[var(--border)] bg-white/70 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-3 rounded-2xl border border-[var(--border)] bg-[var(--card)]/70 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-sm text-[var(--muted-foreground)]">一鍵把目前 `conference_id` 還是空的 papers 依既有規則補綁到 conference 實體。</div>
             <Button type="button" onClick={props.onBulkBindConferences} disabled={props.isBulkBindingConferences}>
               {props.isBulkBindingConferences ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Link2 className="mr-2 h-4 w-4" />}
@@ -70,11 +70,11 @@ export function PaperRecordsSection(props: Props) {
           ) : null}
 
           {props.editingPaper ? (
-            <form className="space-y-3 rounded-3xl border border-[var(--border)] bg-white/75 p-4" onSubmit={props.onPaperSave}>
+            <form className="space-y-3 rounded-3xl border border-[var(--border)] bg-[var(--card)]/75 p-4" onSubmit={props.onPaperSave}>
               <label className="block text-sm">
                 <div className="mb-1 text-[var(--muted-foreground)]">Title</div>
                 <input
-                  className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2"
+                  className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[var(--foreground)]"
                   value={props.editingPaper.title}
                   onChange={(event) => props.onEditPaperChange({ ...props.editingPaper!, title: event.target.value })}
                 />
@@ -82,7 +82,7 @@ export function PaperRecordsSection(props: Props) {
               <label className="block text-sm">
                 <div className="mb-1 text-[var(--muted-foreground)]">Conference Entity</div>
                 <select
-                  className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2"
+                  className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[var(--foreground)]"
                   value={props.editingPaper.conference_id ?? ""}
                   onChange={(event) => {
                     const selectedConferenceId = event.target.value || null;
@@ -111,7 +111,7 @@ export function PaperRecordsSection(props: Props) {
               <label className="block text-sm">
                 <div className="mb-1 text-[var(--muted-foreground)]">Paper URL</div>
                 <input
-                  className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2"
+                  className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[var(--foreground)]"
                   value={props.editingPaper.url ?? ""}
                   onChange={(event) => props.onEditPaperChange({ ...props.editingPaper!, url: event.target.value })}
                 />
@@ -119,7 +119,7 @@ export function PaperRecordsSection(props: Props) {
               <label className="block text-sm">
                 <div className="mb-1 text-[var(--muted-foreground)]">Conference Source URL</div>
                 <input
-                  className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2"
+                  className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[var(--foreground)]"
                   value={props.editingPaper.source_page_url ?? ""}
                   disabled={Boolean(props.editingPaper.conference_id)}
                   onChange={(event) => props.onEditPaperChange({ ...props.editingPaper!, source_page_url: event.target.value })}
@@ -129,7 +129,7 @@ export function PaperRecordsSection(props: Props) {
                 <label className="block text-sm">
                   <div className="mb-1 text-[var(--muted-foreground)]">Venue</div>
                   <input
-                    className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2"
+                    className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[var(--foreground)]"
                     value={props.editingPaper.venue ?? ""}
                     disabled={Boolean(props.editingPaper.conference_id)}
                     onChange={(event) => props.onEditPaperChange({ ...props.editingPaper!, venue: event.target.value })}
@@ -138,7 +138,7 @@ export function PaperRecordsSection(props: Props) {
                 <label className="block text-sm">
                   <div className="mb-1 text-[var(--muted-foreground)]">Year</div>
                   <input
-                    className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2"
+                    className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[var(--foreground)]"
                     type="number"
                     value={props.editingPaper.year ?? ""}
                     disabled={Boolean(props.editingPaper.conference_id)}
@@ -151,7 +151,7 @@ export function PaperRecordsSection(props: Props) {
               <label className="block text-sm">
                 <div className="mb-1 text-[var(--muted-foreground)]">Abstract</div>
                 <textarea
-                  className="min-h-28 w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2"
+                  className="min-h-28 w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[var(--foreground)]"
                   value={props.editingPaper.abstract ?? ""}
                   onChange={(event) => props.onEditPaperChange({ ...props.editingPaper!, abstract: event.target.value })}
                 />
@@ -176,7 +176,7 @@ export function PaperRecordsSection(props: Props) {
                 取出並綁定 conference 實體
               </Button>
               {props.conferenceResolutionByPaperId[props.editingPaper.id] ? (
-                <div className="rounded-2xl border border-[var(--border)] bg-white/70 px-4 py-3 text-sm text-[var(--muted-foreground)]">
+                <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)]/70 px-4 py-3 text-sm text-[var(--muted-foreground)]">
                   {props.conferenceResolutionByPaperId[props.editingPaper.id].message}
                 </div>
               ) : null}
@@ -242,7 +242,7 @@ export function PaperRecordsSection(props: Props) {
                 }}
               >
                 <input
-                  className="min-w-0 flex-1 rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm sm:w-20 sm:flex-none"
+                  className="min-w-0 flex-1 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)] sm:w-20 sm:flex-none"
                   inputMode="numeric"
                   pattern="[0-9]*"
                   value={props.paperPageInput}
@@ -257,20 +257,20 @@ export function PaperRecordsSection(props: Props) {
           </div>
 
           <form
-            className="grid min-w-0 gap-3 rounded-2xl border border-[var(--border)] bg-white/70 p-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(180px,1fr)_120px_120px_auto_auto]"
+            className="grid min-w-0 gap-3 rounded-2xl border border-[var(--border)] bg-[var(--card)]/70 p-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(180px,1fr)_120px_120px_auto_auto]"
             onSubmit={props.onSearchSubmit}
           >
             <div className="relative min-w-0 flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted-foreground)]" />
               <input
-                className="w-full min-w-0 rounded-xl border border-[var(--border)] bg-white px-10 py-2 text-sm"
+                className="w-full min-w-0 rounded-xl border border-[var(--border)] bg-[var(--card)] px-10 py-2 text-sm text-[var(--foreground)]"
                 value={props.paperSearchQuery}
                 onChange={(event) => props.onPaperSearchQueryChange(event.target.value)}
                 placeholder="用關鍵字搜尋 title、venue、abstract 或 source URL"
               />
             </div>
             <select
-              className="min-w-0 rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm"
+              className="min-w-0 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)]"
               value={props.paperConferenceFilter}
               onChange={(event) => props.onPaperConferenceFilterChange(event.target.value)}
             >
@@ -284,7 +284,7 @@ export function PaperRecordsSection(props: Props) {
               ))}
             </select>
             <input
-              className="min-w-0 rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm"
+              className="min-w-0 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)]"
               inputMode="numeric"
               pattern="[0-9]*"
               value={props.paperYearFromFilter}
@@ -292,7 +292,7 @@ export function PaperRecordsSection(props: Props) {
               placeholder="起始年份"
             />
             <input
-              className="min-w-0 rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm"
+              className="min-w-0 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)]"
               inputMode="numeric"
               pattern="[0-9]*"
               value={props.paperYearToFilter}
@@ -307,7 +307,7 @@ export function PaperRecordsSection(props: Props) {
 
           <div className="space-y-3">
             {props.papers.map((paper) => (
-              <div key={paper.id} className="rounded-2xl border border-[var(--border)] bg-white/70 p-4">
+              <div key={paper.id} className="rounded-2xl border border-[var(--border)] bg-[var(--card)]/70 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="space-y-2">
                     <div className="font-semibold">{paper.title}</div>
@@ -316,7 +316,7 @@ export function PaperRecordsSection(props: Props) {
                       {paper.venue ? <span>{paper.venue}</span> : null}
                       {paper.year ? <span>{paper.year}</span> : null}
                       {paper.conference_name ? (
-                        <Badge className="border border-[var(--border)] bg-white text-[var(--foreground)]">
+                        <Badge className="border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)]">
                           Conference entity: {paper.conference_name}
                         </Badge>
                       ) : null}
@@ -365,7 +365,7 @@ export function PaperRecordsSection(props: Props) {
               </div>
             ))}
             {props.papers.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-[var(--border)] bg-white/60 px-4 py-8 text-center text-sm text-[var(--muted-foreground)]">
+              <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--card)]/60 px-4 py-8 text-center text-sm text-[var(--muted-foreground)]">
                 目前這一頁沒有 paper。
               </div>
             ) : null}

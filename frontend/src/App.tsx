@@ -5,6 +5,7 @@ import { ChatPanel } from "./features/chat/ChatPanel";
 import { IngestionPanel } from "./features/ingestion/IngestionPanel";
 import { AppSidebar, AppView, getViewTitle } from "./features/navigation/AppSidebar";
 import { PaperRecordsSection } from "./features/papers/PaperRecordsSection";
+import { ThemeProvider } from "./components/theme-provider";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "./components/ui/sidebar";
 import {
   BatchConferenceBindingResult,
@@ -460,25 +461,26 @@ export default function App() {
   }
 
   return (
-    <SidebarProvider defaultOpen>
-      <div className="min-h-screen w-full bg-[var(--background)]">
-        <div className="flex min-h-screen w-full">
-          <AppSidebar currentView={currentView} onViewChange={setCurrentView} />
+    <ThemeProvider>
+      <SidebarProvider defaultOpen>
+        <div className="min-h-screen w-full bg-[var(--background)]">
+          <div className="flex min-h-screen w-full">
+            <AppSidebar currentView={currentView} onViewChange={setCurrentView} />
 
-          <SidebarInset className="min-w-0 bg-transparent">
-            {currentView !== "chat" ? (
-              <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-[var(--border)] bg-[color:rgba(255,255,255,0.9)] px-4 backdrop-blur md:px-8">
-                <SidebarTrigger className="md:hidden" />
-                <div className="min-w-0">
-                  <div className="text-xs font-medium uppercase tracking-[0.22em] text-[var(--muted-foreground)]">
-                    Paper Agent
+            <SidebarInset className="min-w-0 bg-transparent">
+              {currentView !== "chat" ? (
+                <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-[var(--border)] bg-[color:rgba(255,255,255,0.9)] px-4 backdrop-blur md:px-8 dark:bg-[color:rgba(12,12,12,0.88)]">
+                  <SidebarTrigger className="md:hidden" />
+                  <div className="min-w-0">
+                    <div className="text-xs font-medium uppercase tracking-[0.22em] text-[var(--muted-foreground)]">
+                      Paper Agent
+                    </div>
+                    <div className="truncate text-lg font-semibold tracking-tight text-[var(--foreground)]">
+                      {currentViewTitle}
+                    </div>
                   </div>
-                  <div className="truncate text-lg font-semibold tracking-tight text-[var(--foreground)]">
-                    {currentViewTitle}
-                  </div>
-                </div>
-              </header>
-            ) : null}
+                </header>
+              ) : null}
 
             <div
               className={[
@@ -582,9 +584,10 @@ export default function App() {
                 </div>
               ) : null}
             </div>
-          </SidebarInset>
+            </SidebarInset>
+          </div>
         </div>
-      </div>
-    </SidebarProvider>
+      </SidebarProvider>
+    </ThemeProvider>
   );
 }

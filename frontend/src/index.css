@@ -23,6 +23,9 @@
     --sidebar-accent-foreground: 240 5.9% 10%;
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 217.2 91.2% 59.8%;
+    --app-glow-a: rgba(0, 0, 0, 0.04);
+    --app-glow-b: rgba(0, 0, 0, 0.03);
+    --app-bg-end: #f1f1f1;
   }
 
   * {
@@ -34,9 +37,9 @@
     min-width: 320px;
     min-height: 100vh;
     background:
-      radial-gradient(circle at top left, rgba(0, 0, 0, 0.04), transparent 24%),
-      radial-gradient(circle at top right, rgba(0, 0, 0, 0.03), transparent 28%),
-      linear-gradient(180deg, #fafafa 0%, #f1f1f1 100%);
+      radial-gradient(circle at top left, var(--app-glow-a), transparent 24%),
+      radial-gradient(circle at top right, var(--app-glow-b), transparent 28%),
+      linear-gradient(180deg, var(--background) 0%, var(--app-bg-end) 100%);
     color: var(--foreground);
     font-family: "IBM Plex Sans", "Noto Sans TC", sans-serif;
   }
@@ -53,14 +56,37 @@
   textarea {
     font: inherit;
   }
+
+  html {
+    color-scheme: light;
+  }
+
   .dark {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.95 0 0);
+    --card: oklch(0.18 0 0);
+    --card-foreground: oklch(0.95 0 0);
+    --muted: oklch(0.24 0 0);
+    --muted-foreground: oklch(0.72 0 0);
+    --border: oklch(0.28 0 0);
+    --primary: oklch(0.96 0 0);
+    --primary-foreground: oklch(0.14 0 0);
+    --accent: oklch(0.24 0 0);
+    --accent-foreground: oklch(0.95 0 0);
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-primary: 0 0% 98%;
+    --sidebar-primary-foreground: 240 5.9% 10%;
     --sidebar-accent: 240 3.7% 15.9%;
     --sidebar-accent-foreground: 240 4.8% 95.9%;
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 217.2 91.2% 59.8%;
+    --app-glow-a: rgba(255, 255, 255, 0.03);
+    --app-glow-b: rgba(255, 255, 255, 0.02);
+    --app-bg-end: #101010;
+  }
+
+  html.dark {
+    color-scheme: dark;
   }
 }
