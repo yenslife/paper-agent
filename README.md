@@ -65,16 +65,39 @@ VITE_API_BASE_URL=/api
 
 ## Docker Compose
 
-專案提供四個容器：
+專案提供六個容器：
 
 - `postgres`: 使用 `pgvector/pgvector:pg16`，提供 paper agent 的向量資料庫
 - `adminer`: 提供資料庫瀏覽介面
+- `valkey`: 提供 `SearXNG` 所需的快取後端
+- `searxng`: 免 API key 的開源 metasearch service，供 backend 的 `web_search` 工具使用
 - `backend`: FastAPI API server
 - `browser-service`: 獨立的 browser automation API，供 backend 轉呼叫
 - `frontend`: 以 `nginx` 提供建置後的 React 前端
 - PostgreSQL 會在第一次建立 volume 時，自動套用 `docker/postgres/init/*.sql`，建立 extension、enum、tables 與 indexes
 - compose 模式下前端會透過 `nginx` 將 `/api/*` 代理到 backend，不需要瀏覽器直接跨來源打 `localhost:8000`
 - backend image 會在建置時安裝 `browser-use` 所需的 Chromium，讓 `browser_browse_task` 可在 Docker 內執行
+- compose 模式下 backend 會預設連到內部的 `searxng` 容器，所以 `web_search` 開箱即可使用，不需要額外 API key
+- `searxng` 現在改成接近官方 `searxng-docker` 的 compose 啟動方式：使用官方 image、將整個設定目錄以 `rw` 掛到 `/etc/searxng`，並額外掛載 `/var/cache/searxng`
+- 內建 `SearXNG` 目前採用本機 compose 用途的精簡設定，會停用 limiter，避免因未經反向代理而持續出現 `X-Forwarded-For` / `X-Real-IP` 的 botdetection 警告
+- 專案會使用 `docker/searxng/config/` 當設定目錄，其中包含最小的 `settings.yml` 與 `limiter.toml`
+- `SearXNG` 仍然保留 `server.secret_key` 這個安全機制；請務必在 `.env` 中設定 `SEARXNG_SECRET`，不要直接使用預設值
+- 另外會將 `ahmia`、`torch` 預設停用，並移除目前最容易噴出 `CAPTCHA` / `403` / `timeout` 的 `duckduckgo`、`karmasearch`、`wikidata`，降低本機開發時的噪音與不穩定性
+- `searxng` 的 healthcheck 只檢查首頁是否可用，不再用實際搜尋結果判斷健康，避免因外部搜尋引擎暫時失敗而被 compose 誤判成 unhealthy
+
+建議先自行產生一組 `SearXNG` secret：
+
+```bash
+openssl rand -hex 32
+```
+
+然後把結果填到 `.env`：
+
+```bash
+SEARXNG_SECRET=your_generated_hex_secret
+```
+
+如果沒有設定，SearXNG 啟動時可能會出現類似 `server.secret_key is not changed` 的安全警告。
 
 完整啟動前後端與資料庫：
 
@@ -87,6 +110,7 @@ docker compose up -d
 - Frontend: `http://localhost:5173`
 - Backend API: `http://localhost:8000`
 - Browser Service API: `http://localhost:8001`
+- SearXNG: `http://localhost:8081`
 - Adminer: `http://localhost:8080`
 
 停止：
@@ -135,6 +159,51 @@ cd frontend && pnpm dev
 
 本機前端預設會在 `http://localhost:5173`，並透過 `VITE_API_BASE_URL` 連線到 backend。若未設定，預設連 `http://localhost:8000`。
 
+### 開發者常用啟動方式
+
+若你主要在改 backend：
+
+```bash
+docker compose up -d postgres adminer browser-service searxng
+cd backend && uv run uvicorn paper_agent.main:app --reload
+```
+
+這種模式下：
+
+- `postgres`: 提供資料庫
+- `browser-service`: 提供 `browser_browse_task`
+- `searxng`: 提供 `web_search`
+- `adminer`: 方便檢查資料庫內容
+
+若你主要在改 frontend：
+
+```bash
+docker compose up -d backend browser-service searxng postgres
+cd frontend && pnpm dev
+```
+
+如果 backend 也想一起本機 hot reload，建議改成：
+
+```bash
+docker compose up -d postgres adminer browser-service searxng
+cd backend && uv run uvicorn paper_agent.main:app --reload
+cd frontend && pnpm dev
+```
+
+若你主要在改 `browser-service`：
+
+```bash
+docker compose up -d postgres searxng
+cd browser-service && uv run uvicorn browser_service.main:app --reload --host 0.0.0.0 --port 8001
+cd backend && uv run uvicorn paper_agent.main:app --reload
+```
+
+若你只想用完整容器模式測整體整合：
+
+```bash
+docker compose up -d --build
+```
+
 ## Markdown 匯入格式
 
 系統現在會優先使用 LLM 解析 Markdown，再退回規則 parser 當 fallback，所以格式可以比以前自由。不過為了提升解析穩定度，仍然建議每篇 paper 至少清楚出現 `title + url`，而且 `venue/year` 盡量放在 heading 或附近文字中。
@@ -170,7 +239,7 @@ heading 中若包含 venue 與年份，系統會自動保留。
 目前聊天 Agent 除了本地 paper retrieval 外，還有以下 paper-specific 工具：
 
 - `search_papers`
-  - 以向量檢索查本地資料庫中的相關 papers
+  - 以語意向量檢索查本地資料庫中的相關 papers
 - `get_paper_details`
   - 取得已檢索 papers 的詳細資料
 - `find_paper_abstract`
@@ -181,6 +250,12 @@ heading 中若包含 venue 與年份，系統會自動保留。
   - 直接將 PDF URL 轉成 Markdown
 - `convert_paper_pdf_to_markdown`
   - 先解析特定 paper 的 PDF URL，再把 PDF 轉成 Markdown
+- `inspect_database_schema`
+  - 動態檢查目前資料庫 schema，讓 Agent 在執行 SQL 前先知道有哪些表與欄位
+- `query_database_sql`
+  - 執行受限的唯讀 SQL，用於查詢 conferences、papers、import jobs 等結構化 metadata
+- `web_search`
+  - 進行免 API key 的外部 web search，優先走 `SearXNG`，失敗時 fallback 到 `DDGS`
 
 其中 `lookup_paper_on_web` 的目前支援來源如下：
 
@@ -201,6 +276,13 @@ heading 中若包含 venue 與年份，系統會自動保留。
 - `browser_browse_task`
   - 讓 Agent 在 page-specific extractor 與 paper lookup 都不足時，轉呼叫 `browser-service`
   - 真正的 `browser-use` 與 Chromium runtime 被隔離在 `browser-service`，避免主 backend 的 OpenAI 依賴衝突
+
+`web_search` 的設定方式：
+
+- `docker compose` 模式下會自動啟動內建 `SearXNG` 容器，backend 預設連到 `http://searxng:8080`
+- 若你想改成外部自建或可信任的 `SearXNG` instance，可在 `.env` 覆寫：
+  - `SEARXNG_BASE_URL=https://your-searxng.example`
+- 若 `SearXNG` 不可用，系統會自動 fallback 到 `DDGS`
 
 ## 測試
 

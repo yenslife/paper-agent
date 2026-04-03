@@ -1,0 +1,21 @@
+use_default_settings:
+  engines:
+    remove:
+      - duckduckgo
+      - karmasearch
+      - wikidata
+
+general:
+  instance_name: "Paper Agent SearXNG"
+
+server:
+  # Overwritten by ${SEARXNG_SECRET}
+  secret_key: "ultrasecretkey"
+  limiter: false
+  image_proxy: false
+
+engines:
+  - name: ahmia
+    inactive: true
+  - name: torch
+    inactive: true

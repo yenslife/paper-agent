@@ -8,6 +8,7 @@ from paper_agent.services.markdown_parser import MarkdownParser
 from paper_agent.services.paper_lookup import PaperLookupService
 from paper_agent.services.pdf_markdown import PdfMarkdownService
 from paper_agent.services.retrieval import RetrievalService
+from paper_agent.services.web_search import WebSearchService
 
 embedding_service = EmbeddingService()
 abstract_fetcher = AbstractFetcher()
@@ -16,6 +17,7 @@ pdf_markdown_service = PdfMarkdownService(paper_lookup_service)
 browser_use_service = BrowserUseService()
 retrieval_service = RetrievalService(embedding_service)
 database_query_service = DatabaseQueryService()
+web_search_service = WebSearchService()
 markdown_parser = MarkdownParser()
 ingestion_service = IngestionService(abstract_fetcher, embedding_service, markdown_parser=markdown_parser)
 chat_service = ChatService(
@@ -25,4 +27,5 @@ chat_service = ChatService(
     pdf_markdown_service,
     browser_use_service,
     database_query_service,
+    web_search_service,
 )

@@ -21,6 +21,7 @@ from paper_agent.services.database_query import DatabaseQueryService, DatabaseQu
 from paper_agent.services.paper_lookup import PaperLookupService
 from paper_agent.services.pdf_markdown import PdfMarkdownService
 from paper_agent.services.retrieval import RetrievalService
+from paper_agent.services.web_search import WebSearchService
 
 
 class AgentCitation(BaseModel):
@@ -46,6 +47,7 @@ class AgentContext:
     pdf_markdown_service: PdfMarkdownService
     browser_use_service: BrowserUseService
     database_query_service: DatabaseQueryService
+    web_search_service: WebSearchService
     local_citations: dict[str, Citation] = field(default_factory=dict)
     tool_traces: list[ToolTrace] = field(default_factory=list)
     event_emitter: Callable[[dict[str, object]], Awaitable[None]] | None = None
@@ -71,6 +73,7 @@ class ChatService:
         pdf_markdown_service: PdfMarkdownService,
         browser_use_service: BrowserUseService,
         database_query_service: DatabaseQueryService,
+        web_search_service: WebSearchService,
     ) -> None:
         self.retrieval_service = retrieval_service
         self.ingestion_service = ingestion_service
@@ -78,6 +81,7 @@ class ChatService:
         self.pdf_markdown_service = pdf_markdown_service
         self.browser_use_service = browser_use_service
         self.database_query_service = database_query_service
+        self.web_search_service = web_search_service
         self.settings = get_settings()
 
     async def run_chat(
@@ -96,6 +100,7 @@ class ChatService:
             pdf_markdown_service=self.pdf_markdown_service,
             browser_use_service=self.browser_use_service,
             database_query_service=self.database_query_service,
+            web_search_service=self.web_search_service,
         )
         agent = self._build_agent()
         input_text = self._format_conversation_input(message, history, has_persistent_session=session_id is not None)
@@ -152,6 +157,7 @@ class ChatService:
             pdf_markdown_service=self.pdf_markdown_service,
             browser_use_service=self.browser_use_service,
             database_query_service=self.database_query_service,
+            web_search_service=self.web_search_service,
             event_emitter=emit,
         )
         agent = self._build_agent()
@@ -856,22 +862,52 @@ class ChatService:
 
         @function_tool
         async def web_search(ctx: RunContextWrapper[AgentContext], query: str) -> str:
-            """Placeholder web search tool. It is currently unavailable and should not be treated as a real web result."""
+            """Search the public web without API keys. Use this for general web context, recent background, or when paper-specific lookup is insufficient."""
+
+            await self._emit_tool_started(
+                ctx,
+                "web_search",
+                f"搜尋外部網頁：「{query}」。",
+            )
+            results = await ctx.context.web_search_service.search(query)
+            if not results:
+                await self._record_tool_trace(
+                    ctx,
+                    "web_search",
+                    "not_found",
+                    f"外部 web search 沒有為「{query}」找到結果。",
+                )
+                return json.dumps(
+                    {
+                        "status": "not_found",
+                        "query": query,
+                        "results": [],
+                    },
+                    ensure_ascii=False,
+                )
+
+            for result in results:
+                citation_key = f"web:{result.url}"
+                ctx.context.local_citations[citation_key] = Citation(
+                    title=result.title,
+                    url=result.url,
+                    source_page_url=None,
+                    venue=None,
+                    year=None,
+                    source_type="web_search",
+                )
 
             await self._record_tool_trace(
-                ctx,  # type: ignore[name-defined]
+                ctx,
                 "web_search",
-                "unavailable",
-                f"外部 web search 尚未配置，無法直接搜尋「{query}」。",
+                "ok",
+                f"外部 web search 為「{query}」找到 {len(results)} 筆結果。",
             )
             return json.dumps(
                 {
-                    "status": "unavailable",
+                    "status": "ok",
                     "query": query,
-                    "message": (
-                        "Web search is not configured yet. "
-                        "Use the local paper database only and clearly tell the user that external web search is unavailable."
-                    ),
+                    "results": [result.to_dict() for result in results],
                 },
                 ensure_ascii=False,
             )
@@ -888,7 +924,9 @@ Rules:
 1d. If the site is dynamic, blocked, or the paper-specific lookup tools are insufficient, use `browser_browse_task` as a fallback browser automation tool.
 1e. If the user asks about database metadata such as what conferences exist, counts, import jobs, or other structured listings, first use `inspect_database_schema`, then `query_database_sql` with a read-only SELECT query.
 1f. Do not use SQL for semantic paper search. SQL is only for structured metadata lookups; paper discovery and related-paper tasks should use `search_papers`.
-2. The `web_search` tool is currently a dummy placeholder. If you call it, explain that external web search is not configured yet.
+2. Use `web_search` for general web context, current background, or when you need to discover candidate pages before deeper inspection.
+2a. `web_search` and `browser_browse_task` can be combined. A good pattern is: first use `web_search` to find promising URLs, then use `browser_browse_task` to inspect a dynamic site, read a page more carefully, or follow up on a specific result.
+2b. If a user asks about a company, website, project page, documentation page, or other non-paper web content, prefer `web_search` first and then escalate to `browser_browse_task` only when plain search results are not enough.
 3. Never claim you read a paper unless it came from `get_paper_details`, `convert_paper_pdf_to_markdown`, `convert_pdf_url_to_markdown`, or `browser_browse_task`.
 4. Citations must only include URLs that came from trusted tools.
 5. Distinguish local paper citations from web search citations with the `source_type` field.

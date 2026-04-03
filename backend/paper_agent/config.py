@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     retrieval_top_k: int = 5
     http_timeout_seconds: float = 20.0
     web_search_context_size: str = "medium"
+    web_search_max_results: int = 5
+    searxng_base_url: str | None = None
     max_history_messages: int = 8
     parser_chunk_size_chars: int = 12000
     parser_chunk_overlap_chars: int = 1800
