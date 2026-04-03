@@ -17,6 +17,7 @@ from paper_agent.models import IngestStatus, Paper, PaperEmbedding
 from paper_agent.schemas import ChatMessage, ChatResponse, Citation, SourceSummary, ToolTrace
 from paper_agent.services.ingestion import IngestionService
 from paper_agent.services.browser_use_service import BrowserUseService
+from paper_agent.services.database_query import DatabaseQueryService, DatabaseQueryValidationError, DatabaseSchemaInspectionError
 from paper_agent.services.paper_lookup import PaperLookupService
 from paper_agent.services.pdf_markdown import PdfMarkdownService
 from paper_agent.services.retrieval import RetrievalService
@@ -44,6 +45,7 @@ class AgentContext:
     paper_lookup_service: PaperLookupService
     pdf_markdown_service: PdfMarkdownService
     browser_use_service: BrowserUseService
+    database_query_service: DatabaseQueryService
     local_citations: dict[str, Citation] = field(default_factory=dict)
     tool_traces: list[ToolTrace] = field(default_factory=list)
     event_emitter: Callable[[dict[str, object]], Awaitable[None]] | None = None
@@ -68,12 +70,14 @@ class ChatService:
         paper_lookup_service: PaperLookupService,
         pdf_markdown_service: PdfMarkdownService,
         browser_use_service: BrowserUseService,
+        database_query_service: DatabaseQueryService,
     ) -> None:
         self.retrieval_service = retrieval_service
         self.ingestion_service = ingestion_service
         self.paper_lookup_service = paper_lookup_service
         self.pdf_markdown_service = pdf_markdown_service
         self.browser_use_service = browser_use_service
+        self.database_query_service = database_query_service
         self.settings = get_settings()
 
     async def run_chat(
@@ -91,6 +95,7 @@ class ChatService:
             paper_lookup_service=self.paper_lookup_service,
             pdf_markdown_service=self.pdf_markdown_service,
             browser_use_service=self.browser_use_service,
+            database_query_service=self.database_query_service,
         )
         agent = self._build_agent()
         input_text = self._format_conversation_input(message, history, has_persistent_session=session_id is not None)
@@ -146,6 +151,7 @@ class ChatService:
             paper_lookup_service=self.paper_lookup_service,
             pdf_markdown_service=self.pdf_markdown_service,
             browser_use_service=self.browser_use_service,
+            database_query_service=self.database_query_service,
             event_emitter=emit,
         )
         agent = self._build_agent()
@@ -268,6 +274,90 @@ class ChatService:
 
     def _build_agent(self) -> Agent[AgentContext]:
         @function_tool
+        async def inspect_database_schema(
+            ctx: RunContextWrapper[AgentContext],
+        ) -> str:
+            """Inspect the read-only database schema. Use this before writing SQL queries about conferences, papers, or import jobs."""
+
+            await self._emit_tool_started(
+                ctx,
+                "inspect_database_schema",
+                "查看資料庫 schema 與可查詢的表。",
+            )
+            try:
+                schema = await ctx.context.database_query_service.describe_schema(ctx.context.session)
+            except DatabaseSchemaInspectionError as error:
+                await self._record_tool_trace(
+                    ctx,
+                    "inspect_database_schema",
+                    "error",
+                    f"資料庫 schema 檢查失敗：{error}",
+                )
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "message": str(error),
+                    },
+                    ensure_ascii=False,
+                )
+            await self._record_tool_trace(
+                ctx,
+                "inspect_database_schema",
+                "ok",
+                f"查看資料庫 schema，共 {len(schema.get('tables', []))} 個資料表。",
+            )
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "schema": schema,
+                },
+                ensure_ascii=False,
+            )
+
+        @function_tool
+        async def query_database_sql(
+            ctx: RunContextWrapper[AgentContext],
+            sql: str,
+        ) -> str:
+            """Execute a read-only SQL query against the local database. Only SELECT queries are allowed. Use this only for structured metadata questions such as listing conferences, counts, or import jobs. Do not use SQL as a replacement for semantic paper retrieval."""
+
+            await self._emit_tool_started(
+                ctx,
+                "query_database_sql",
+                f"執行唯讀 SQL：{sql}",
+            )
+            try:
+                result = await ctx.context.database_query_service.execute_readonly_sql(ctx.context.session, sql)
+            except DatabaseQueryValidationError as error:
+                await self._record_tool_trace(
+                    ctx,
+                    "query_database_sql",
+                    "error",
+                    f"SQL 驗證失敗：{error}",
+                )
+                return json.dumps(
+                    {
+                        "status": "invalid_sql",
+                        "message": str(error),
+                    },
+                    ensure_ascii=False,
+                )
+
+            await self._record_tool_trace(
+                ctx,
+                "query_database_sql",
+                "ok",
+                f"執行唯讀 SQL，取得 {result.row_count} 筆資料。",
+            )
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "result": result.to_dict(),
+                },
+                ensure_ascii=False,
+            )
+
+        @function_tool
         async def search_papers(
             ctx: RunContextWrapper[AgentContext],
             query: str,
@@ -275,7 +365,7 @@ class ChatService:
             year: int | None = None,
             top_k: int | None = None,
         ) -> str:
-            """Search the local paper database by semantic similarity. Use this first for paper-related questions."""
+            """Search the local paper database by semantic similarity. Use this first for paper-related questions, topic discovery, or when the user may describe a concept without exact title keywords."""
 
             await self._emit_tool_started(
                 ctx,
@@ -791,10 +881,13 @@ You are a research paper assistant.
 
 Rules:
 1. For any request that depends on papers, first use `search_papers`.
+1aa. `search_papers` is semantic retrieval, not plain keyword matching. Use it when the user asks for related topics, similar papers, research directions, or concept-level queries even if the exact paper title or wording is unknown.
 1a. If the user asks for the abstract of a specific paper, use `find_paper_abstract`.
 1b. If the user needs a specific paper's PDF, slide, video, DOI, or paper page, use `lookup_paper_on_web`.
 1c. If the user needs to read the PDF content itself, use `convert_paper_pdf_to_markdown` or `convert_pdf_url_to_markdown`. Read it in chunks if needed.
 1d. If the site is dynamic, blocked, or the paper-specific lookup tools are insufficient, use `browser_browse_task` as a fallback browser automation tool.
+1e. If the user asks about database metadata such as what conferences exist, counts, import jobs, or other structured listings, first use `inspect_database_schema`, then `query_database_sql` with a read-only SELECT query.
+1f. Do not use SQL for semantic paper search. SQL is only for structured metadata lookups; paper discovery and related-paper tasks should use `search_papers`.
 2. The `web_search` tool is currently a dummy placeholder. If you call it, explain that external web search is not configured yet.
 3. Never claim you read a paper unless it came from `get_paper_details`, `convert_paper_pdf_to_markdown`, `convert_pdf_url_to_markdown`, or `browser_browse_task`.
 4. Citations must only include URLs that came from trusted tools.
@@ -809,6 +902,8 @@ Rules:
             model=self.settings.openai_model,
             model_settings=ModelSettings(temperature=0.2),
             tools=[
+                inspect_database_schema,
+                query_database_sql,
                 search_papers,
                 get_paper_details,
                 find_paper_abstract,

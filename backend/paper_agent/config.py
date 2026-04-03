@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     semantic_scholar_api_key: str | None = None
     pdf_markdown_chunk_chars: int = 12000
     pdf_markdown_cache_entries: int = 16
+    database_query_max_rows: int = 100
     browser_service_url: str = "http://localhost:8001"
     paper_fetch_user_agent: str = Field(
         default="paper-agent/0.1",
